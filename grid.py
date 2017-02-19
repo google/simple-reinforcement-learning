@@ -80,8 +80,11 @@ score is the cumulative score of the player in this run of the simulation.'''
     new_state = self.x + delta[0], self.y + delta[1]
 
     if self._valid_move(new_state):
-      if self._world.at(new_state) == '^':
-        reward = -1000
+      ch = self._world.at(new_state)
+      if ch == '^':
+        reward = -10000
+      elif ch == '$':
+        reward = 10000
       self.state = new_state
 
     self.score += reward
@@ -323,19 +326,6 @@ class QLearner(object):
       reward + self._gamma * self._q.best(new_state)[1] - prev))
 
 
-def start(driver):
-  w = world.World.parse('''\
-########
-#..#...#
-#.@#.$.#
-#.##^^.#
-#......#
-########
-''')
-  game = Game(w, driver)
-  game.start()
-
-
 def main():
   if '--interactive' in sys.argv:
     player = HumanPlayer()
@@ -347,7 +337,22 @@ def main():
   else:
     print('use --test, --interactive or --q')
     sys.exit(1)
-  start(player)
+
+  w = None
+  if '--random' in sys.argv:
+    w = world.Generator(25, 15).generate()
+  else:
+    w = world.World.parse('''\
+  ########
+  #..#...#
+  #.@#.$.#
+  #.##^^.#
+  #......#
+  ########
+  ''')
+
+  game = Game(w, player)
+  game.start()
 
 
 if __name__ == '__main__':

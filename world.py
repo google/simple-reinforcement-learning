@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import random
 import unittest
 
 # Grid world maps are specified with characters a bit like NetHack:
@@ -89,6 +90,13 @@ Positions are indexed from the origin 0,0 at the top, left of the map.'''
     x, y = pos
     return self._lines[y][x]
 
+  def pretty_str(self):
+    copy = [] + self._lines
+    x, y = self.init_state
+    start_line = copy[y]
+    copy[y] = start_line[0:x] + '@' + start_line[x+1:]
+    return '\n'.join(copy)
+
 
 class TestWorld(unittest.TestCase):
   def test_size(self):
@@ -102,6 +110,114 @@ class TestWorld(unittest.TestCase):
   def test_parse_no_init_state_fails(self):
     with self.assertRaises(WorldFailure):
       World.parse('#')
+
+
+MOVEMENT_DIRECTIONS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
+
+
+class Generator(object):
+  '''Generates random grid worlds.'''
+  def __init__(self, width, height):
+    '''Creates a generator for worlds with a fixed size.
+    width: The width of the world. Must be at least two cells wide.
+    height: The height of the world. Must be at least one cell high.
+    '''
+    assert 2 <= width
+    assert 1 <= height
+    self._width = width
+    self._height = height
+    self._grid = None
+    self._passable = None
+
+  def generate(self):
+    '''Generates and returns a new world.'''
+    self._grid = list(map(lambda _: [' '] * self._width, range(self._height)))
+    self._passable = set()
+
+    x = random.randrange(0, self._width - 1)
+    y = random.randrange(0, self._height)
+
+    # Make at least two squares passable
+    self._paint((x, y), '.')
+    self._paint((x + 1, y), '.')
+
+    # Take a random walk, for a while
+    d = random.randrange(0, 4)
+    for _ in range(random.randrange(self._width + self._height,
+                                    self._width * self._height + 2)):
+      self._paint((x, y), '.')
+      dx, dy = MOVEMENT_DIRECTIONS[d]
+      x += dx
+      y += dy
+      x = max(0, min(x, self._width - 1))
+      y = max(0, min(y, self._height - 1))
+      d = (d + random.choice([-1, 0, 0, 0, 0, 0, 1])) % 4  # Turn sometimes
+
+    # Pick a start and end position
+    start = self._random_passable()
+    # Start is technically passable, but we do not want to overwrite it
+    self._passable.discard(start)
+    end = self._random_passable()
+    self._paint(end, '$')
+    print(start, end)
+
+    # Paint some traps.
+    n_squares = len(self._passable)
+    for _ in range(random.randrange(n_squares // 6, n_squares // 4 + 1)):
+      p = self._random_passable()
+      self._paint(p, '^')
+      if not self._is_reachable(start, end):
+        # Oops, put it back.
+        self._paint(p, '.')
+
+    grid = list(map(''.join, self._grid))
+    return World(start, grid)
+
+  def _random_passable(self):
+    return random.choice(tuple(self._passable))
+
+  def _paint(self, p, ch):
+    self._grid[p[1]][p[0]] = ch
+    if ch == '.':
+      self._passable.add(p)
+    else:
+      self._passable.discard(p)
+
+  def _is_reachable(self, start, end):
+    work = [start]
+    visited = set(work)
+    if start == end:
+      return True
+    while work:
+      (x, y) = work.pop()
+      for dx, dy in MOVEMENT_DIRECTIONS:
+        p = x + dx, y + dy
+        if p == end:
+          # Subtly this permits reaching end even if it is not
+          # "passable". This is so the generator can discard the end
+          # as "passable" so it is not selected to be overwritten with
+          # a trap.
+          return True
+        elif self._is_passable(p) and p not in visited:
+          visited.add(p)
+          work.append(p)
+    return False
+
+  def _is_passable(self, p):
+    return p in self._passable
+
+
+class TestGenerator(unittest.TestCase):
+  def test_generate_tiny_world(self):
+    g = Generator(2, 1)
+    w = g.generate()
+    # The world should have a start and goal
+    if w.init_state == (0, 0):
+      self.assertEqual('$', w.at((1, 0)))
+    elif w.init_state == (1, 0):
+      self.assertEqual('$', w.at((0, 0)))
+    else:
+      self.fail('the start position %s is invalid' % (w.init_state,))
 
 
 if __name__ == '__main__':
