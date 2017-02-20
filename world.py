@@ -17,6 +17,8 @@
 import random
 import unittest
 
+import movement
+
 # Grid world maps are specified with characters a bit like NetHack:
 # #, (blank) are impassable
 # . is passable
@@ -112,9 +114,6 @@ class TestWorld(unittest.TestCase):
       World.parse('#')
 
 
-MOVEMENT_DIRECTIONS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
-
-
 class Generator(object):
   '''Generates random grid worlds.'''
   def __init__(self, width, height):
@@ -146,7 +145,7 @@ class Generator(object):
     for _ in range(random.randrange(self._width + self._height,
                                     self._width * self._height + 2)):
       self._paint((x, y), '.')
-      dx, dy = MOVEMENT_DIRECTIONS[d]
+      dx, dy = movement.ALL_MOTIONS[d]
       x += dx
       y += dy
       x = max(0, min(x, self._width - 1))
@@ -190,7 +189,7 @@ class Generator(object):
       return True
     while work:
       (x, y) = work.pop()
-      for dx, dy in MOVEMENT_DIRECTIONS:
+      for dx, dy in movement.ALL_MOTIONS:
         p = x + dx, y + dy
         if p == end:
           # Subtly this permits reaching end even if it is not

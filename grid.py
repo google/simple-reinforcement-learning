@@ -27,22 +27,9 @@ import unittest
 
 from unittest.mock import patch
 
+import movement
 import world
 
-# The player can take four actions: move up, down, left or right.
-ACTION_UP = 'u'
-ACTION_DOWN = 'd'
-ACTION_LEFT = 'l'
-ACTION_RIGHT = 'r'
-
-MOVEMENT = {
-  ACTION_UP: (0, -1),
-  ACTION_DOWN: (0, 1),
-  ACTION_LEFT: (-1, 0),
-  ACTION_RIGHT: (1, 0)
-}
-
-ALL_ACTIONS = list(MOVEMENT.keys())
 
 class Simulation(object):
   '''Tracks the player in a world and implements the rules and rewards.
@@ -76,7 +63,7 @@ score is the cumulative score of the player in this run of the simulation.'''
     '''Performs action and returns the reward from that step.'''
     reward = -1
 
-    delta = MOVEMENT[action]
+    delta = movement.MOVEMENT[action]
     new_state = self.x + delta[0], self.y + delta[1]
 
     if self._valid_move(new_state):
@@ -107,14 +94,14 @@ class TestSimulation(unittest.TestCase):
     w = world.World.parse('@^')
     sim = Simulation(w)
     self.assertFalse(sim.in_terminal_state)
-    sim.act(ACTION_RIGHT)
+    sim.act(movement.ACTION_RIGHT)
     self.assertTrue(sim.in_terminal_state)
 
   def test_act_accumulates_score(self):
     w = world.World.parse('@.')
     sim = Simulation(w)
-    sim.act(ACTION_RIGHT)
-    sim.act(ACTION_LEFT)
+    sim.act(movement.ACTION_RIGHT)
+    sim.act(movement.ACTION_LEFT)
     self.assertEqual(-2, sim.score)
 
 # There is also an interactive version of the game. These are keycodes
@@ -127,10 +114,10 @@ KEY_DOWN = 258
 KEY_LEFT = 260
 KEY_RIGHT = 261
 KEY_ACTION_MAP = {
-  KEY_UP: ACTION_UP,
-  KEY_DOWN: ACTION_DOWN,
-  KEY_LEFT: ACTION_LEFT,
-  KEY_RIGHT: ACTION_RIGHT
+  KEY_UP: movement.ACTION_UP,
+  KEY_DOWN: movement.ACTION_DOWN,
+  KEY_LEFT: movement.ACTION_LEFT,
+  KEY_RIGHT: movement.ACTION_RIGHT
 }
 QUIT_KEYS = set([KEY_Q, KEY_ESC])
 
@@ -240,7 +227,7 @@ class StubLearner(object):
 
 class TestMachinePlayer(unittest.TestCase):
   def test_interact(self):
-    TEST_ACTION = ACTION_RIGHT
+    TEST_ACTION = movement.ACTION_RIGHT
     q = QTable(-1)
     q.set((0, 0), TEST_ACTION, 1)
 
@@ -259,7 +246,7 @@ class TestMachinePlayer(unittest.TestCase):
 class RandomPolicy(object):
   '''A policy which picks actions at random.'''
   def pick_action(self, _):
-    return random.choice(ALL_ACTIONS)
+    return random.choice(movement.ALL_ACTIONS)
 
 
 class EpsilonPolicy(object):
@@ -296,7 +283,7 @@ class QTable(object):
     '''Gets the best predicted action and its value for |state|.'''
     best_value = -1e20
     best_action = None
-    for action in ALL_ACTIONS:
+    for action in movement.ALL_ACTIONS:
       value = self.get(state, action)
       if value > best_value:
         best_action, best_value = action, value
