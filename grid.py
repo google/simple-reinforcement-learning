@@ -28,81 +28,9 @@ import unittest
 from unittest.mock import patch
 
 import movement
+import simulation
 import world
 
-
-class Simulation(object):
-  '''Tracks the player in a world and implements the rules and rewards.
-score is the cumulative score of the player in this run of the simulation.'''
-  def __init__(self, world):
-    '''Creates a new simulation in world.'''
-    self._world = world
-    self.reset()
-
-  def reset(self):
-    '''Resets the simulation to the initial state.'''
-    self.state = self._world.init_state
-    self.score = 0
-
-  @property
-  def in_terminal_state(self):
-    '''Whether the simulation is in a terminal state (stopped.)'''
-    return self._world.at(self.state) in ['^', '$']
-
-  @property
-  def x(self):
-    '''The x coordinate of the player.'''
-    return self.state[0]
-
-  @property
-  def y(self):
-    '''The y coordinate of the player.'''
-    return self.state[1]
-
-  def act(self, action):
-    '''Performs action and returns the reward from that step.'''
-    reward = -1
-
-    delta = movement.MOVEMENT[action]
-    new_state = self.x + delta[0], self.y + delta[1]
-
-    if self._valid_move(new_state):
-      ch = self._world.at(new_state)
-      if ch == '^':
-        reward = -10000
-      elif ch == '$':
-        reward = 10000
-      self.state = new_state
-    else:
-      # Penalty for hitting the walls.
-      reward -= 5
-
-    self.score += reward
-    return reward
-
-  def _valid_move(self, new_state):
-    '''Gets whether movement to new_state is a valid move.'''
-    new_x, new_y = new_state
-    # TODO: Could check that there's no teleportation cheating.
-    return (0 <= new_x and new_x < self._world.w and
-            0 <= new_y and new_y < self._world.h and
-            self._world.at(new_state) in ['.', '^', '$'])
-
-
-class TestSimulation(unittest.TestCase):
-  def test_in_terminal_state(self):
-    w = world.World.parse('@^')
-    sim = Simulation(w)
-    self.assertFalse(sim.in_terminal_state)
-    sim.act(movement.ACTION_RIGHT)
-    self.assertTrue(sim.in_terminal_state)
-
-  def test_act_accumulates_score(self):
-    w = world.World.parse('@.')
-    sim = Simulation(w)
-    sim.act(movement.ACTION_RIGHT)
-    sim.act(movement.ACTION_LEFT)
-    self.assertEqual(-2, sim.score)
 
 # There is also an interactive version of the game. These are keycodes
 # for interacting with it.
@@ -127,7 +55,7 @@ class Game(object):
   def __init__(self, world, driver):
     '''Creates a new game in world where driver will interact with the game.'''
     self._world = world
-    self._sim = Simulation(world)
+    self._sim = simulation.Simulation(world)
     self._driver = driver
 
   def start(self):
@@ -233,8 +161,8 @@ class TestMachinePlayer(unittest.TestCase):
 
     player = MachinePlayer(GreedyQ(q), StubLearner())
     w = world.World.parse('@.')
-    with patch.object(Simulation, 'act') as mock_act:
-      sim = Simulation(w)
+    with patch.object(simulation.Simulation, 'act') as mock_act:
+      sim = simulation.Simulation(w)
       player.interact(sim, StubWindow())
     mock_act.assert_called_once_with(TEST_ACTION)
 
