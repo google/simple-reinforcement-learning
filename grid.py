@@ -86,6 +86,9 @@ score is the cumulative score of the player in this run of the simulation.'''
       elif ch == '$':
         reward = 10000
       self.state = new_state
+    else:
+      # Penalty for hitting the walls.
+      reward -= 5
 
     self.score += reward
     return reward
