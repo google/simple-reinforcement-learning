@@ -129,9 +129,109 @@ class TestSimulationToArray(unittest.TestCase):
       (np.array([[2, 3, 4, 5, 1]], dtype=np.int8) == simulation_to_array(sim))
       .all())
 
+
+STATE_FEATURE_SIZE = 6
+EMBEDDING_DIMENSION = 4
+
+
+def neural_network(state, world_size_h_w):
+  '''Makes a neural network for examining worlds.
+
+  This network features:
+  - An embedding layer.
+  - Two layers of convolutions with max pooling.
+  - A fully connected layer. The embedding layer is resupplied.
+  - Output logits and softmax for up, right, down, left.
+
+  Args:
+    state: The map, a tensor of height * width.
+    world_size_h_w: A tuple, the height and width of the world.
+
+  Returns:
+    logits: The -1 * 4 logits output tensor for up, right, down, left.
+    softmax: The softmax for the same.
+  '''
+  h, w = world_size_h_w
+  embedding = tf.Variable(
+    tf.truncated_normal(shape=[STATE_FEATURE_SIZE, EMBEDDING_DIMENSION],
+                        stddev=0.1))
+  embedded = tf.nn.embedding_lookup(
+    embedding,
+    tf.reshape(state, [-1, h * w]))
+  embedded = tf.reshape(embedded, [-1, h, w, EMBEDDING_DIMENSION])
+  # First convolutional and pooling layer.
+  conv_1_out_channels = 3
+  conv_1_filter = tf.Variable(
+      tf.truncated_normal((5, 5, EMBEDDING_DIMENSION, conv_1_out_channels),
+                          stddev=0.1))
+  conv_1_bias = tf.Variable(tf.constant(0.1, shape=[conv_1_out_channels]))
+  conv_1 = tf.nn.conv2d(embedded, conv_1_filter, [1, 1, 1, 1], 'SAME')
+  conv_1 = tf.nn.relu(conv_1 + conv_1_bias)
+  pool_1 = tf.nn.max_pool(conv_1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                          padding='SAME')
+  # Second convolution and pooling layer.
+  conv_2_out_channels = 7
+  conv_2_filter = tf.Variable(
+    tf.truncated_normal((5, 5, conv_1_out_channels, conv_2_out_channels),
+                        stddev=0.1))
+  conv_2_bias = tf.Variable(tf.constant(0.1, shape=[conv_2_out_channels]))
+  conv_2 = tf.nn.conv2d(pool_1, conv_2_filter, [1, 1, 1, 1], 'SAME')
+  conv_2 = tf.nn.relu(conv_2 + conv_2_bias)
+  pool_2 = tf.nn.max_pool(conv_2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                          padding='SAME')
+  # Resupply the embedding layer.
+  shrunk_w = (w+3)//4
+  shrunk_h = (h+3)//4
+  pool_2 = tf.reshape(pool_2, [-1, shrunk_h * shrunk_w * conv_2_out_channels])
+  embedded = tf.reshape(embedded, [-1, h * w * EMBEDDING_DIMENSION])
+  fc_input = tf.concat([pool_2, embedded], axis=1)
+  fc_input_size = (shrunk_h * shrunk_w * conv_2_out_channels +
+                   h * w * EMBEDDING_DIMENSION)
+  # Fully connected layer.
+  fc_output_size = 100
+  w2 = tf.Variable(
+    tf.truncated_normal([fc_input_size, fc_output_size], stddev=0.1))
+  b2 = tf.Variable(tf.constant(0.1, shape=[fc_output_size]))
+  fc_pre = tf.matmul(fc_input, w2) + b2
+  fc = tf.nn.relu(fc_pre)
+  # Softmax.
+  action_size = 4
+  w3 = tf.Variable(
+    tf.truncated_normal([fc_output_size, action_size], stddev=0.1))
+  b3 = tf.Variable(tf.constant(0.1, shape=[action_size]))
+  logits_pre = tf.matmul(fc, w3) + b3
+  logits = tf.sigmoid(logits_pre)
+  softmax = tf.nn.softmax(logits)
+  return logits, softmax
+
+
+class TestNeuralNetwork(unittest.TestCase):
+  def test(self):
+    # This first because it is useful to have the world dimensions.
+    w = world.World.parse('''
+@.#$
+^...
+##^^
+####
+####
+####''')
+
+    # Make the graph.
+    g = tf.Graph()
+    with g.as_default():
+      world_in = tf.placeholder(tf.int32, shape=[None, w.h, w.w])
+      _, out = neural_network(world_in, (w.h, w.w))
+
+    # Start a simulation.
+    sim = simulation.Simulation(w)
+    raw = simulation_to_array(sim)
+    with tf.Session(graph=g) as session:
+      # Could use tf.argmax for convenience.
+      session.run(tf.global_variables_initializer())
+      act = session.run(out, feed_dict={world_in: [raw]})
+    print(act)
+
 # TODO(dominicc):
-# - implement a mapping from simulation state to np.array
-# - implement a convolutional neural network over that state
 # - implement the critic network
 # - implement the actor network
 # - implement target networks and snapshot updates
