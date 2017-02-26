@@ -53,10 +53,9 @@ QUIT_KEYS = set([KEY_Q, KEY_ESC])
 
 class Game(object):
   '''A simulation that uses curses.'''
-  def __init__(self, world, driver):
+  def __init__(self, world_generator, driver):
     '''Creates a new game in world where driver will interact with the game.'''
-    self._world = world
-    self._sim = simulation.Simulation(world)
+    self._sim = simulation.Simulation(world_generator)
     self._driver = driver
 
   def start(self):
@@ -68,7 +67,7 @@ class Game(object):
     while not self._driver.should_quit:
       # Paint
       self._draw(window)
-      window.addstr(self._world.h, 0, 'Score: %d' % self._sim.score)
+      window.addstr(self._sim.world.h, 0, 'Score: %d' % self._sim.score)
       # TODO: Use a curses box for this.
       self._driver.annotate(self._sim, window)
       window.move(self._sim.y, self._sim.x)
@@ -81,7 +80,7 @@ class Game(object):
   def _draw(self, window):
     window.erase()
     # Draw the environment
-    for y, line in enumerate(self._world._lines):
+    for y, line in enumerate(self._sim.world._lines):
       window.addstr(y, 0, line)
     # Draw the player
     window.addstr(self._sim.y, self._sim.x, '@')
@@ -255,16 +254,16 @@ class QLearner(object):
 def main():
   w = None
   if '--random' in sys.argv:
-    w = world.Generator(25, 15).generate()
+    w = world.Generator(16, 12)
   else:
-    w = world.World.parse('''\
+    w = world.Static(world.World.parse('''\
   ########
   #..#...#
   #.@#.$.#
   #.##^^.#
   #......#
   ########
-  ''')
+  '''))
 
   if '--interactive' in sys.argv:
     player = HumanPlayer()

@@ -114,6 +114,23 @@ class TestWorld(unittest.TestCase):
       World.parse('#')
 
 
+class Static(object):
+  '''Always returns a fixed world.'''
+  def __init__(self, world):
+    self._world = world
+
+  def generate(self):
+    return self._world
+
+  @property
+  def w(self):
+    return self._world.w
+
+  @property
+  def h(self):
+    return self._world.h
+
+
 class Generator(object):
   '''Generates random grid worlds.'''
   def __init__(self, width, height):
@@ -123,18 +140,18 @@ class Generator(object):
     '''
     assert 2 <= width
     assert 1 <= height
-    self._width = width
-    self._height = height
+    self.w = width
+    self.h = height
     self._grid = None
     self._passable = None
 
   def generate(self):
     '''Generates and returns a new world.'''
-    self._grid = list(map(lambda _: [' '] * self._width, range(self._height)))
+    self._grid = list(map(lambda _: [' '] * self.w, range(self.h)))
     self._passable = set()
 
-    x = random.randrange(0, self._width - 1)
-    y = random.randrange(0, self._height)
+    x = random.randrange(0, self.w - 1)
+    y = random.randrange(0, self.h)
 
     # Make at least two squares passable
     self._paint((x, y), '.')
@@ -142,14 +159,14 @@ class Generator(object):
 
     # Take a random walk, for a while
     d = random.randrange(0, 4)
-    for _ in range(random.randrange(self._width + self._height,
-                                    self._width * self._height + 2)):
+    for _ in range(random.randrange(self.w + self.h,
+                                    self.w * self.h + 2)):
       self._paint((x, y), '.')
       dx, dy = movement.ALL_MOTIONS[d]
       x += dx
       y += dy
-      x = max(0, min(x, self._width - 1))
-      y = max(0, min(y, self._height - 1))
+      x = max(0, min(x, self.w - 1))
+      y = max(0, min(y, self.h - 1))
       d = (d + random.choice([-1, 0, 0, 0, 0, 0, 1])) % 4  # Turn sometimes
 
     # Pick a start and end position
@@ -158,7 +175,6 @@ class Generator(object):
     self._passable.discard(start)
     end = self._random_passable()
     self._paint(end, '$')
-    print(start, end)
 
     # Paint some traps.
     n_squares = len(self._passable)

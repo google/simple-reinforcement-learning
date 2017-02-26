@@ -345,6 +345,8 @@ class ActorCriticPlayer(object):
     self._annot_loss = 0.
     self._annot_actions = [0.] * ACTION_SIZE
     self._annotate_y = world_h_w[0] + 1
+    self._annot_wins = 0
+    self._annot_losses = 0
 
   @property
   def should_quit(self):
@@ -365,6 +367,12 @@ class ActorCriticPlayer(object):
     new_state = simulation_to_array(sim)
     is_terminal = sim.in_terminal_state
     self._experience.add(state, act, reward, new_state, is_terminal)
+
+    if is_terminal:
+      if sim.score > 0:
+        self._annot_wins += 1
+      else:
+        self._annot_losses += 1
 
     # Learn
     old_states, actions, rewards, new_states, _ = self._experience.sample_batch(
@@ -395,7 +403,6 @@ class ActorCriticPlayer(object):
 
     # Snapshot current network to target network
     self._step += 1
-    # TODO: Output loss
     # Snapshot to target
     if self._step % 1000 == 0:
       self._session.run(self._update_target)
@@ -407,7 +414,8 @@ class ActorCriticPlayer(object):
                         range(palette_size)))
       self._annot_palette = visualize.ColorRamp(10, 10, colors)
 
-    window.addstr(self._annotate_y, 0, 'Loss: %.4f' % self._annot_loss)
+    window.addstr(self._annotate_y, 0, 'W/L: %d/%d    NN Loss: %.4f' % (
+        self._annot_wins, self._annot_losses, self._annot_loss))
     window.addstr(self._annotate_y + 1, 0, 'Actions: %s' % self._annot_actions)
 
     # Evaluate the value function at each point

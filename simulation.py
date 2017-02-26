@@ -23,13 +23,15 @@ import world
 class Simulation(object):
   '''Tracks the player in a world and implements the rules and rewards.
 score is the cumulative score of the player in this run of the simulation.'''
-  def __init__(self, world):
+  def __init__(self, generator):
     '''Creates a new simulation in world.'''
-    self.world = world
+    self._generator = generator
+    self.world = generator.generate()
     self.reset()
 
   def reset(self):
     '''Resets the simulation to the initial state.'''
+    self.world = self._generator.generate()
     self.state = self.world.init_state
     self.score = 0
 
