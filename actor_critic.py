@@ -41,12 +41,13 @@ class ReplayBuffer(object):
     '''Creates a ReplayBuffer which can hold up to max_size items.'''
     assert max_size > 0
     self._max_size = max_size
-    self._buffer = []
+    self._buffer_terminal = []
+    self._buffer_nonterminal = []
 
   @property
   def size(self):
     '''The number of experiences entered into the buffer.'''
-    return len(self._buffer)
+    return len(self._buffer_terminal) + len(self._buffer_nonterminal)
 
   def add(self, old_state, action, reward, new_state, is_terminal):
     '''Adds one item to the experience buffer.
@@ -67,10 +68,11 @@ class ReplayBuffer(object):
     assert type(reward) == float
     assert type(is_terminal) == bool
     sample = (old_state, action, reward, new_state, is_terminal)
-    if self.size < self._max_size:
-      self._buffer.append(sample)
+    b = is_terminal and self._buffer_terminal or self._buffer_nonterminal
+    if len(b) < self._max_size // 2:
+      b.append(sample)
     else:
-      self._buffer[random.randrange(self._max_size)] = sample
+      b[random.randrange(self._max_size // 2)] = sample
 
   def sample_batch(self, batch_size):
     '''Samples up to batch_size items from the replay buffer.
@@ -86,7 +88,8 @@ class ReplayBuffer(object):
       state.
     '''
     assert self.size > 0
-    buffer = random.sample(self._buffer, min(self.size, batch_size))
+    buffer = random.sample(self._buffer_nonterminal + self._buffer_terminal,
+                           min(self.size, batch_size))
     buffer = np.array(buffer)
     old_state = np.stack(buffer[:,0])
     action = np.stack(buffer[:,1])
@@ -349,7 +352,7 @@ class ActorCriticPlayer(object):
       self._update_target = self._target_net.assign_op(self._net)
     self._session = tf.Session(graph=self._graph)
     self._session.run(init)
-    self._experience = ReplayBuffer(200)
+    self._experience = ReplayBuffer(100)
     self._step = 0
     self._annot_palette = None
     self._annot_loss = 0.

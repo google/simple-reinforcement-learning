@@ -38,7 +38,7 @@ score is the cumulative score of the player in this run of the simulation.'''
   @property
   def in_terminal_state(self):
     '''Whether the simulation is in a terminal state (stopped.)'''
-    return self.world.at(self.state) in ['^', '$']
+    return self.world.at(self.state) in ['^', '$'] or self.score < -1000
 
   @property
   def x(self):

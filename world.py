@@ -167,7 +167,7 @@ class Generator(object):
       y += dy
       x = max(0, min(x, self.w - 1))
       y = max(0, min(y, self.h - 1))
-      d = (d + random.choice([-1, 0, 0, 0, 0, 0, 1])) % 4  # Turn sometimes
+      d = (d + random.choice([-1, 0, 0, 0, 0, 1])) % 4  # Turn sometimes
 
     # Pick a start and end position
     start = self._random_passable()
