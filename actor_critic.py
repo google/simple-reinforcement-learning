@@ -135,7 +135,7 @@ class TestSimulationToArray(unittest.TestCase):
 
 
 STATE_FEATURE_SIZE = 6
-EMBEDDING_DIMENSION = 4
+EMBEDDING_DIMENSION = 5
 ACTION_SIZE = len(movement.ALL_ACTIONS)
 
 
@@ -205,13 +205,13 @@ class ActorCriticNetwork(object):
       # by the entropy term.
       policy_loss = tf.reduce_sum(tf.log(responsible_outputs) *
                                   advantages_input)
-      loss = 0.3 * value_loss + 0.7 * policy_loss - 0.01 * entropy_boost
+      loss = 0.6 * value_loss + 0.4 * policy_loss - 0.3 * entropy_boost
 
       local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                      self._name)
       gradients = tf.gradients(loss, local_vars)
       # TODO: Examine gradients; does this clipping make sense?
-      gradients, _ = tf.clip_by_global_norm(gradients, 40.0)
+      gradients, _ = tf.clip_by_global_norm(gradients, 10.0)
       update = trainer.apply_gradients(zip(gradients, local_vars))
       return action_input, target_value_input, advantages_input, loss, update
 
@@ -240,7 +240,7 @@ class ActorCriticNetwork(object):
 
     This network features:
     - An embedding layer.
-    - Two layers of convolutions with max pooling.
+    - Three layers of convolutions with max pooling.
     - A fully connected layer. The embedding layer is resupplied.
     - Output softmax for actions.
     - Output value estimation for the state.
@@ -263,9 +263,9 @@ class ActorCriticNetwork(object):
         tf.reshape(state, [-1, h * w]))
     embedded = tf.reshape(embedded, [-1, h, w, EMBEDDING_DIMENSION])
     # First convolutional and pooling layer.
-    conv_1_out_channels = 3
+    conv_1_out_channels = 18
     conv_1_filter = tf.Variable(
-        tf.truncated_normal((5, 5, EMBEDDING_DIMENSION, conv_1_out_channels),
+        tf.truncated_normal((3, 3, EMBEDDING_DIMENSION, conv_1_out_channels),
                             stddev=0.1))
     conv_1_bias = tf.Variable(tf.constant(0.1, shape=[conv_1_out_channels]))
     conv_1 = tf.nn.conv2d(embedded, conv_1_filter, [1, 1, 1, 1], 'SAME')
@@ -273,7 +273,7 @@ class ActorCriticNetwork(object):
     pool_1 = tf.nn.max_pool(conv_1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                             padding='SAME')
     # Second convolution and pooling layer.
-    conv_2_out_channels = 7
+    conv_2_out_channels = 36
     conv_2_filter = tf.Variable(
         tf.truncated_normal((5, 5, conv_1_out_channels, conv_2_out_channels),
                             stddev=0.1))
@@ -282,13 +282,23 @@ class ActorCriticNetwork(object):
     conv_2 = tf.nn.relu(conv_2 + conv_2_bias)
     pool_2 = tf.nn.max_pool(conv_2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                             padding='SAME')
+    # Third convolution and pooling layer.
+    conv_3_out_channels = 36
+    conv_3_filter = tf.Variable(
+        tf.truncated_normal((5, 5, conv_2_out_channels, conv_3_out_channels),
+                            stddev=0.1))
+    conv_3_bias = tf.Variable(tf.constant(0.1, shape=[conv_3_out_channels]))
+    conv_3 = tf.nn.conv2d(pool_2, conv_3_filter, [1, 1, 1, 1], 'SAME')
+    conv_3 = tf.nn.relu(conv_3 + conv_3_bias)
+    pool_3 = tf.nn.max_pool(conv_3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                            padding='SAME')
     # Resupply the embedding layer.
-    shrunk_w = (w+3)//4
-    shrunk_h = (h+3)//4
-    pool_2 = tf.reshape(pool_2, [-1, shrunk_h * shrunk_w * conv_2_out_channels])
+    shrunk_w = (w+7)//8
+    shrunk_h = (h+7)//8
+    pool_3 = tf.reshape(pool_3, [-1, shrunk_h * shrunk_w * conv_3_out_channels])
     embedded = tf.reshape(embedded, [-1, h * w * EMBEDDING_DIMENSION])
-    fc_input = tf.concat([pool_2, embedded], axis=1)
-    fc_input_size = (shrunk_h * shrunk_w * conv_2_out_channels +
+    fc_input = tf.concat([pool_3, embedded], axis=1)
+    fc_input_size = (shrunk_h * shrunk_w * conv_3_out_channels +
                      h * w * EMBEDDING_DIMENSION)
     # Fully connected layer.
     fc_output_size = 100
@@ -339,7 +349,7 @@ class ActorCriticPlayer(object):
       self._update_target = self._target_net.assign_op(self._net)
     self._session = tf.Session(graph=self._graph)
     self._session.run(init)
-    self._experience = ReplayBuffer(100)
+    self._experience = ReplayBuffer(200)
     self._step = 0
     self._annot_palette = None
     self._annot_loss = 0.
