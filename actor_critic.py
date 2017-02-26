@@ -19,6 +19,7 @@
 # * [Deep Deterministic Policy Gradients in Tensorflow](http://pemami4911.github.io/blog/2016/08/21/ddpg-rl.html)
 # * [Asynchronous Actor-Critic Agents](https://medium.com/emergent-future/simple-reinforcement-learning-with-tensorflow-part-8-asynchronous-actor-critic-agents-a3c-c88f72a5e9f2)
 
+import collections
 import numpy as np
 import random
 import tensorflow as tf
@@ -131,14 +132,14 @@ def simulation_to_array(sim):
 class TestSimulationToArray(unittest.TestCase):
   def test(self):
     w = world.World.parse('$.@^#')
-    sim = simulation.Simulation(w)
+    sim = simulation.Simulation(world.Static(w))
     self.assertTrue(
       (np.array([[2, 3, 4, 5, 1]], dtype=np.int8) == simulation_to_array(sim))
       .all())
 
 
-STATE_FEATURE_SIZE = 6
-EMBEDDING_DIMENSION = 5
+STATE_FEATURE_SIZE = 6 + 5  # Features plus five recent positions
+EMBEDDING_DIMENSION = 24
 ACTION_SIZE = len(movement.ALL_ACTIONS)
 
 
@@ -212,7 +213,7 @@ class ActorCriticNetwork(object):
       tf.summary.scalar('value_loss', value_loss)
       tf.summary.scalar('policy_loss', policy_loss)
       tf.summary.scalar('entropy_boost', -entropy_boost)
-      loss = 0.6 * value_loss + 0.4 * policy_loss - 0.3 * entropy_boost
+      loss = 0.8 * value_loss + 0.2 * policy_loss - 0.2 * entropy_boost
 
       local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                      self._name)
@@ -360,6 +361,8 @@ class ActorCriticPlayer(object):
       init = tf.global_variables_initializer()
     self._session = tf.Session(graph=self._graph)
     self._session.run(init)
+    # TODO: Move this to the simulation since it is state.
+    self._recent_states = collections.deque([], 5)
     self._experience = ReplayBuffer(100)
     self._step = 0
     self._annot_palette = None
@@ -369,6 +372,10 @@ class ActorCriticPlayer(object):
     self._annot_wins = 0
     self._annot_losses = 0
     self._train_writer = tf.summary.FileWriter('/tmp/srltrain')
+
+  def _annotate_trace(self, state):
+    for i, (x, y) in enumerate(self._recent_states):
+      state[y,x] = 6 + i
 
   @property
   def should_quit(self):
@@ -380,13 +387,23 @@ class ActorCriticPlayer(object):
       return
     # Move!
     state = simulation_to_array(sim)
+    self._annotate_trace(state)
+
     [[act], self._annot_actions] = self._session.run(
       [self._net.actor_action, self._net.actor_softmax],
       feed_dict={self._net.state_input: [state]})
     # TODO: Clean this duct tape up
     act = np.int64(sample(self._annot_actions[0]))
     reward = float(sim.act(movement.ALL_ACTIONS[act]))
+
+    # Boost the penalty if retracing steps.
+    if sim.state in self._recent_states:
+      reward -= 5.0
+
+    self._recent_states.append(sim.state)
     new_state = simulation_to_array(sim)
+    self._annotate_trace(new_state)
+
     is_terminal = sim.in_terminal_state
     self._experience.add(state, act, reward, new_state, is_terminal)
 
@@ -423,9 +440,12 @@ class ActorCriticPlayer(object):
           self._net.state_input: old_states
         })
 
+    if is_terminal:
+      self._recent_states = collections.deque([], 5)
+
     self._train_writer.add_summary(summary, self._step)
 
-    # Snapshot to target
+    # Snapshot current network to target network
     if self._step % 1000 == 0:
       self._session.run(self._update_target)
 
@@ -473,7 +493,7 @@ $''')
       net = ActorCriticNetwork('testTrain', (w.h, w.w),
                                trainer=tf.train.AdamOptimizer())
       init = tf.global_variables_initializer()
-    state = simulation_to_array(simulation.Simulation(w))
+    state = simulation_to_array(simulation.Simulation(world.Static(w)))
     session = tf.Session(graph=g)
     session.run(init)
     losses = []
@@ -488,13 +508,13 @@ $''')
     self.assertTrue(losses[-1] < losses[0])
 
   def testAssign(self):
-    w = world.Generator(10, 20).generate()
+    generator = world.Generator(10, 20)
     g = tf.Graph()
     with g.as_default():
-      net_a = ActorCriticNetwork('a', (w.h, w.w))
-      net_b = ActorCriticNetwork('b', (w.h, w.w))
+      net_a = ActorCriticNetwork('a', (generator.h, generator.w))
+      net_b = ActorCriticNetwork('b', (generator.h, generator.w))
       assign = net_a.assign_op(net_b)
-    state = simulation_to_array(simulation.Simulation(w))
+    state = simulation_to_array(simulation.Simulation(generator))
     with tf.Session(graph=g) as session:
       session.run(tf.global_variables_initializer())
       act_a, act_b = session.run([net_a.actor_softmax, net_b.actor_softmax],
@@ -515,21 +535,20 @@ $''')
 ####
 ####
 ####''')
-    self.do_test(w)
+    self.do_test(world.Static(w))
 
   def testLargeWorld(self):
     g = world.Generator(30, 20)
-    w = g.generate()
-    self.do_test(w)
+    self.do_test(g)
 
-  def do_test(self, w):
+  def do_test(self, generator):
     # Make the graph.
     g = tf.Graph()
     with g.as_default():
-      net = ActorCriticNetwork('test', (w.h, w.w))
+      net = ActorCriticNetwork('test', (generator.h, generator.w))
 
     # Start a simulation.
-    sim = simulation.Simulation(w)
+    sim = simulation.Simulation(generator)
     raw = simulation_to_array(sim)
     with tf.Session(graph=g) as session:
       session.run(tf.global_variables_initializer())

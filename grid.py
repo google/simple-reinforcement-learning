@@ -169,7 +169,7 @@ class TestMachinePlayer(unittest.TestCase):
     player = MachinePlayer(GreedyQ(q), StubLearner())
     w = world.World.parse('@.')
     with patch.object(simulation.Simulation, 'act') as mock_act:
-      sim = simulation.Simulation(w)
+      sim = simulation.Simulation(world.Static(w))
       player.interact(sim, StubWindow())
     mock_act.assert_called_once_with(TEST_ACTION)
 
