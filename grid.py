@@ -27,6 +27,7 @@ import unittest
 
 from unittest.mock import patch
 
+import actor_critic
 import movement
 import simulation
 import world
@@ -69,6 +70,7 @@ class Game(object):
       # Paint
       self._draw(window)
       window.addstr(self._world.h, 0, 'Score: %d' % self._sim.score)
+      self._driver.annotate(window)
       window.move(self._sim.y, self._sim.x)
       window.refresh()
 
@@ -101,6 +103,9 @@ class HumanPlayer(object):
     elif self._ch == KEY_SPACE and sim.in_terminal_state:
       sim.reset()
 
+  def annotate(self, window):
+    pass
+
 
 class MachinePlayer(object):
   '''A game driver which applies a policy, observed by a learner.
@@ -123,6 +128,9 @@ The learner can adjust the policy.'''
       reward = sim.act(action)
       self._learner.observe(old_state, action, reward, sim.state)
       time.sleep(0.05)
+
+  def annotate(self, window):
+    pass
 
 
 class StubFailure(Exception):
@@ -245,17 +253,6 @@ class QLearner(object):
 
 
 def main():
-  if '--interactive' in sys.argv:
-    player = HumanPlayer()
-  elif '--q' in sys.argv:
-    q = QTable()
-    learner = QLearner(q, 0.05, 0.1)
-    policy = EpsilonPolicy(GreedyQ(q), RandomPolicy(), 0.01)
-    player = MachinePlayer(policy, learner)
-  else:
-    print('use --test, --interactive or --q')
-    sys.exit(1)
-
   w = None
   if '--random' in sys.argv:
     w = world.Generator(25, 15).generate()
@@ -268,6 +265,19 @@ def main():
   #......#
   ########
   ''')
+
+  if '--interactive' in sys.argv:
+    player = HumanPlayer()
+  elif '--q' in sys.argv:
+    q = QTable()
+    learner = QLearner(q, 0.05, 0.1)
+    policy = EpsilonPolicy(GreedyQ(q), RandomPolicy(), 0.01)
+    player = MachinePlayer(policy, learner)
+  elif '--net' in sys.argv:
+    player = actor_critic.ActorCriticPlayer((w.h, w.w))
+  else:
+    print('use --test, --interactive or --q')
+    sys.exit(1)
 
   game = Game(w, player)
   game.start()

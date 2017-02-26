@@ -51,25 +51,25 @@ class ReplayBuffer(object):
     '''Adds one item to the experience buffer.
 
     Args:
-      old_state: The np.array of state data.
-      action: The one-hot four element np.array indicating which
-          action was taken.
+      old_state: The np.ndarray of state data.
+      action: The np.int64, 0 <= action < 4, indicating which action
+          was taken.
       reward: The float reward from the environment for taking action.
-      new_state: The np.array of state data after action was taken.
+      new_state: The np.ndarray of state data after action was taken.
           This should have the same shape as old_state.
       is_terminal: The bool indicating whether new_state is a terminal state.
+
     '''
     assert old_state.shape == new_state.shape
     assert old_state.dtype == new_state.dtype == np.int8
-    assert action.shape == (4,)
-    assert action.dtype == np.float32
+    assert type(action) == np.int64
     assert type(reward) == float
     assert type(is_terminal) == bool
     sample = (old_state, action, reward, new_state, is_terminal)
     if self.size < self._max_size:
       self._buffer.append(sample)
     else:
-      self._buffer[random.randint(self._max_size)] = sample
+      self._buffer[random.randrange(self._max_size)] = sample
 
   def sample_batch(self, batch_size):
     '''Samples up to batch_size items from the replay buffer.
@@ -86,11 +86,12 @@ class ReplayBuffer(object):
     '''
     assert self.size > 0
     buffer = random.sample(self._buffer, min(self.size, batch_size))
-    old_state = np.array(map(lambda x: x[0], buffer))
-    action = np.array(map(lambda x: x[1], buffer))
-    reward = np.array(map(lambda x: x[2], buffer))
-    new_state = np.array(map(lambda x: x[3], buffer))
-    terminal = np.array(map(lambda x: x[4], buffer))
+    buffer = np.array(buffer)
+    old_state = np.stack(buffer[:,0])
+    action = np.stack(buffer[:,1])
+    reward = np.stack(buffer[:,2])
+    new_state = np.stack(buffer[:,3])
+    terminal = np.stack(buffer[:,4])
     return old_state, action, reward, new_state, terminal
 
 
@@ -152,7 +153,8 @@ class ActorCriticNetwork(object):
     self._name = name
     h, w = world_size_h_w
     with tf.variable_scope(self._name):
-      self.state_input = tf.placeholder(tf.int32, shape=[None, h, w])
+      self.state_input = tf.placeholder(tf.int32, shape=[None, h, w],
+                                        name='state')
       (self.actor_softmax, self.actor_action, self.critic) = (
           self._neural_network(self.state_input, world_size_h_w))
       if trainer:
@@ -182,10 +184,12 @@ class ActorCriticNetwork(object):
     '''
     with tf.variable_scope('training'):
       # Advantage estimate, A = R - V(s)
-      action_input = tf.placeholder(shape=[None], dtype=tf.int32)
+      action_input = tf.placeholder(shape=[None], dtype=tf.int32, name='action')
       action_onehot = tf.one_hot(action_input, ACTION_SIZE, dtype=tf.float32)
-      target_value_input = tf.placeholder(shape=[None], dtype=tf.float32)
-      advantages_input = tf.placeholder(shape=[None], dtype=tf.float32)
+      target_value_input = tf.placeholder(shape=[None], dtype=tf.float32,
+                                          name='target_value')
+      advantages_input = tf.placeholder(shape=[None], dtype=tf.float32,
+                                        name='advantage')
       responsible_outputs = tf.reduce_sum(actor * action_onehot, [1])
 
       value_loss = tf.reduce_sum(tf.square(target_value_input - critic))
@@ -200,7 +204,7 @@ class ActorCriticNetwork(object):
       # by the entropy term.
       policy_loss = tf.reduce_sum(tf.log(responsible_outputs) *
                                   advantages_input)
-      loss = 0.25 * value_loss + 0.75 * policy_loss - 0.01 * entropy_boost
+      loss = 0.3 * value_loss + 0.7 * policy_loss - 0.01 * entropy_boost
 
       local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                      self._name)
@@ -306,8 +310,97 @@ class ActorCriticNetwork(object):
     w4 = tf.Variable(tf.truncated_normal([fc_output_size, 1], stddev=0.1))
     b4 = tf.Variable(tf.constant(0.1, shape=[1]))
     value = tf.matmul(fc, w4) + b4
+    value = tf.squeeze(value, axis=1)
 
     return softmax, action, value
+
+
+def sample(xs):
+  y = random.random()
+  for i, x in enumerate(xs):
+    y -= x
+    if y < 0.:
+      return i
+  return len(xs)-1
+
+
+class ActorCriticPlayer(object):
+  '''A game driver which learns using a neural network.'''
+  def __init__(self, world_h_w):
+    # TODO: Composition would be easier if this did not control the
+    # graph and session.
+    self._graph = tf.Graph()
+    with self._graph.as_default():
+      trainer = tf.train.AdamOptimizer()
+      self._net = ActorCriticNetwork('net', world_h_w, trainer=trainer)
+      self._target_net = ActorCriticNetwork('target', world_h_w)
+      init = tf.global_variables_initializer()
+      self._update_target = self._target_net.assign_op(self._net)
+    self._session = tf.Session(graph=self._graph)
+    self._session.run(init)
+    self._experience = ReplayBuffer(100)
+    self._step = 0
+    self._annot_loss = 0.
+    self._annot_actions = [0.] * ACTION_SIZE
+    self._annotate_y = world_h_w[0] + 1
+
+  @property
+  def should_quit(self):
+    return False
+
+  def interact(self, sim, window):
+    if sim.in_terminal_state:
+      sim.reset()
+      return
+    # Move!
+    state = simulation_to_array(sim)
+    [[act], self._annot_actions] = self._session.run(
+      [self._net.actor_action, self._net.actor_softmax],
+      feed_dict={self._net.state_input: [state]})
+    # TODO: Clean this duct tape up
+    act = np.int64(sample(self._annot_actions[0]))
+    reward = float(sim.act(movement.ALL_ACTIONS[act]))
+    new_state = simulation_to_array(sim)
+    is_terminal = sim.in_terminal_state
+    self._experience.add(state, act, reward, new_state, is_terminal)
+
+    # Learn
+    old_states, actions, rewards, new_states, _ = self._experience.sample_batch(
+        10)
+    gamma = 0.9
+    # TODO: This could be done in fewer runs with some batching and slicing.
+    # Value
+    new_states_v = self._session.run(self._target_net.critic, feed_dict={
+        self._target_net.state_input: new_states
+      })
+    target_v = rewards + gamma * new_states_v
+
+    # Policy
+    # TODO: Should this use the target network or the learning network?
+    old_states_v = self._session.run(self._target_net.critic, feed_dict={
+        self._target_net.state_input: old_states
+      })
+    advantages = rewards + gamma * new_states_v - old_states_v
+
+    self._annot_loss, _ = self._session.run(
+      [self._net.train_loss, self._net.train_update],
+      feed_dict={
+          self._net.train_actions: actions,
+          self._net.train_target_values: target_v,
+          self._net.train_advantages: advantages,
+          self._net.state_input: old_states
+        })
+
+    # Snapshot current network to target network
+    self._step += 1
+    # TODO: Output loss
+    # Snapshot to target
+    if self._step % 1000 == 0:
+      self._session.run(self._update_target)
+
+  def annotate(self, window):
+    window.addstr(self._annotate_y, 0, 'Loss: %.4f' % self._annot_loss)
+    window.addstr(self._annotate_y + 1, 0, 'Actions: %s' % self._annot_actions)
 
 
 class TestNeuralNetwork(unittest.TestCase):
@@ -383,7 +476,6 @@ $''')
     sim = simulation.Simulation(w)
     raw = simulation_to_array(sim)
     with tf.Session(graph=g) as session:
-      # Could use tf.argmax for convenience.
       session.run(tf.global_variables_initializer())
       act = session.run(net.actor_action, feed_dict={net.state_input: [raw]})
       self.assertTrue(0 <= act[0] and act[0] < ACTION_SIZE)
