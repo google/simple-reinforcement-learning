@@ -26,6 +26,7 @@ import unittest
 
 import movement
 import simulation
+import visualize
 import world
 
 
@@ -340,6 +341,7 @@ class ActorCriticPlayer(object):
     self._session.run(init)
     self._experience = ReplayBuffer(100)
     self._step = 0
+    self._annot_palette = None
     self._annot_loss = 0.
     self._annot_actions = [0.] * ACTION_SIZE
     self._annotate_y = world_h_w[0] + 1
@@ -398,9 +400,31 @@ class ActorCriticPlayer(object):
     if self._step % 1000 == 0:
       self._session.run(self._update_target)
 
-  def annotate(self, window):
+  def annotate(self, sim, window):
+    palette_size = 10
+    if not self._annot_palette:
+      colors = list(map(lambda x: (0, x * 1.0/palette_size, 0),
+                        range(palette_size)))
+      self._annot_palette = visualize.ColorRamp(10, 10, colors)
+
     window.addstr(self._annotate_y, 0, 'Loss: %.4f' % self._annot_loss)
     window.addstr(self._annotate_y + 1, 0, 'Actions: %s' % self._annot_actions)
+
+    # Evaluate the value function at each point
+    value = np.zeros(shape=(sim.world.h, sim.world.w))
+    min_value = 1e100
+    max_value = -1e100
+    indices = []
+    for y, x, state in visualize.iterate_possible_states(
+        simulation_to_array(sim)):
+      indices.append((y, x))
+      value[y,x] = self._session.run(self._net.critic,
+                                     feed_dict={self._net.state_input: [state]})
+      min_value = min(value[y,x], min_value)
+      max_value = max(value[y,x], max_value)
+    for y, x in indices:
+      i = visualize.scale(palette_size, value[y,x], min_value, max_value)
+      window.addstr(self._annotate_y + 2 + y, x, '#', self._annot_palette[i])
 
 
 class TestNeuralNetwork(unittest.TestCase):

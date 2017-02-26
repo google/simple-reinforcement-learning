@@ -61,7 +61,6 @@ class Game(object):
 
   def start(self):
     '''Sets up and starts the game and runs it until the driver quits.'''
-    curses.initscr()
     curses.wrapper(self._loop)
 
   # The game loop.
@@ -70,7 +69,8 @@ class Game(object):
       # Paint
       self._draw(window)
       window.addstr(self._world.h, 0, 'Score: %d' % self._sim.score)
-      self._driver.annotate(window)
+      # TODO: Use a curses box for this.
+      self._driver.annotate(self._sim, window)
       window.move(self._sim.y, self._sim.x)
       window.refresh()
 
@@ -103,7 +103,7 @@ class HumanPlayer(object):
     elif self._ch == KEY_SPACE and sim.in_terminal_state:
       sim.reset()
 
-  def annotate(self, window):
+  def annotate(self, sim, window):
     pass
 
 
@@ -129,7 +129,7 @@ The learner can adjust the policy.'''
       self._learner.observe(old_state, action, reward, sim.state)
       time.sleep(0.05)
 
-  def annotate(self, window):
+  def annotate(self, sim, window):
     pass
 
 
