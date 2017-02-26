@@ -163,7 +163,7 @@ class ActorCriticNetwork(object):
           self._neural_network(self.state_input, world_size_h_w))
       if trainer:
         (self.train_actions, self.train_target_values, self.train_advantages,
-         self.train_loss, self.train_update) = (
+         self.train_loss, self.train_update, self.train_summary) = (
             self._training(trainer, self.actor_softmax, self.critic))
 
   def _training(self, trainer, actor, critic):
@@ -201,6 +201,7 @@ class ActorCriticNetwork(object):
       # which is *subtracted* to *decrease* the loss. The network is
       # encouraged to be tentative--high entropy--about action choice
       # to encourage exploration.
+      # TODO: Use an average with mean/softmax_cross_entropy_with_logits
       entropy_boost = -tf.reduce_sum(actor * tf.log(actor))
       # TODO: Need to think about negative rewards. "Asynchronous
       # Actor-Critic Agents" uses a log here but that will generate
@@ -208,6 +209,9 @@ class ActorCriticNetwork(object):
       # by the entropy term.
       policy_loss = tf.reduce_sum(tf.log(responsible_outputs) *
                                   advantages_input)
+      tf.summary.scalar('value_loss', value_loss)
+      tf.summary.scalar('policy_loss', policy_loss)
+      tf.summary.scalar('entropy_boost', -entropy_boost)
       loss = 0.6 * value_loss + 0.4 * policy_loss - 0.3 * entropy_boost
 
       local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
@@ -216,7 +220,11 @@ class ActorCriticNetwork(object):
       # TODO: Examine gradients; does this clipping make sense?
       gradients, _ = tf.clip_by_global_norm(gradients, 10.0)
       update = trainer.apply_gradients(zip(gradients, local_vars))
-      return action_input, target_value_input, advantages_input, loss, update
+
+      merged_summaries = tf.summary.merge_all()
+
+      return (action_input, target_value_input, advantages_input, loss, update,
+              merged_summaries)
 
   def assign_op(self, source):
     '''Builds an operation which assigns the source network to this network.
@@ -272,7 +280,7 @@ class ActorCriticNetwork(object):
                             stddev=0.1))
     conv_1_bias = tf.Variable(tf.constant(0.1, shape=[conv_1_out_channels]))
     conv_1 = tf.nn.conv2d(embedded, conv_1_filter, [1, 1, 1, 1], 'SAME')
-    conv_1 = tf.nn.relu(conv_1 + conv_1_bias)
+    conv_1 = tf.nn.sigmoid(conv_1 + conv_1_bias)
     pool_1 = tf.nn.max_pool(conv_1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                             padding='SAME')
     # Second convolution and pooling layer.
@@ -282,7 +290,7 @@ class ActorCriticNetwork(object):
                             stddev=0.1))
     conv_2_bias = tf.Variable(tf.constant(0.1, shape=[conv_2_out_channels]))
     conv_2 = tf.nn.conv2d(pool_1, conv_2_filter, [1, 1, 1, 1], 'SAME')
-    conv_2 = tf.nn.relu(conv_2 + conv_2_bias)
+    conv_2 = tf.nn.sigmoid(conv_2 + conv_2_bias)
     pool_2 = tf.nn.max_pool(conv_2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                             padding='SAME')
     # Third convolution and pooling layer.
@@ -292,7 +300,7 @@ class ActorCriticNetwork(object):
                             stddev=0.1))
     conv_3_bias = tf.Variable(tf.constant(0.1, shape=[conv_3_out_channels]))
     conv_3 = tf.nn.conv2d(pool_2, conv_3_filter, [1, 1, 1, 1], 'SAME')
-    conv_3 = tf.nn.relu(conv_3 + conv_3_bias)
+    conv_3 = tf.nn.sigmoid(conv_3 + conv_3_bias)
     pool_3 = tf.nn.max_pool(conv_3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                             padding='SAME')
     # Resupply the embedding layer.
@@ -309,7 +317,7 @@ class ActorCriticNetwork(object):
         tf.truncated_normal([fc_input_size, fc_output_size], stddev=0.1))
     b2 = tf.Variable(tf.constant(0.1, shape=[fc_output_size]))
     fc_pre = tf.matmul(fc_input, w2) + b2
-    fc = tf.nn.relu(fc_pre)
+    fc = tf.nn.sigmoid(fc_pre)
 
     # Actor softmax.
     w3 = tf.Variable(
@@ -348,8 +356,8 @@ class ActorCriticPlayer(object):
       trainer = tf.train.AdamOptimizer()
       self._net = ActorCriticNetwork('net', world_h_w, trainer=trainer)
       self._target_net = ActorCriticNetwork('target', world_h_w)
-      init = tf.global_variables_initializer()
       self._update_target = self._target_net.assign_op(self._net)
+      init = tf.global_variables_initializer()
     self._session = tf.Session(graph=self._graph)
     self._session.run(init)
     self._experience = ReplayBuffer(100)
@@ -360,6 +368,7 @@ class ActorCriticPlayer(object):
     self._annotate_y = world_h_w[0] + 1
     self._annot_wins = 0
     self._annot_losses = 0
+    self._train_writer = tf.summary.FileWriter('/tmp/srltrain')
 
   @property
   def should_quit(self):
@@ -405,8 +414,8 @@ class ActorCriticPlayer(object):
       })
     advantages = rewards + gamma * new_states_v - old_states_v
 
-    self._annot_loss, _ = self._session.run(
-      [self._net.train_loss, self._net.train_update],
+    self._annot_loss, _, summary = self._session.run(
+      [self._net.train_loss, self._net.train_update, self._net.train_summary],
       feed_dict={
           self._net.train_actions: actions,
           self._net.train_target_values: target_v,
@@ -414,11 +423,13 @@ class ActorCriticPlayer(object):
           self._net.state_input: old_states
         })
 
-    # Snapshot current network to target network
-    self._step += 1
+    self._train_writer.add_summary(summary, self._step)
+
     # Snapshot to target
     if self._step % 1000 == 0:
       self._session.run(self._update_target)
+
+    self._step += 1
 
   def annotate(self, sim, window):
     palette_size = 10
