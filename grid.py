@@ -23,9 +23,6 @@ import curses
 import random
 import sys
 import time
-import unittest
-
-from unittest.mock import patch
 
 import movement
 import simulation
@@ -153,24 +150,6 @@ class StubLearner(object):
     pass
 
 
-class TestMachinePlayer(unittest.TestCase):
-  def test_interact(self):
-    TEST_ACTION = movement.ACTION_RIGHT
-    q = QTable(-1)
-    q.set((0, 0), TEST_ACTION, 1)
-
-    player = MachinePlayer(GreedyQ(q), StubLearner())
-    w = world.World.parse('@.')
-    with patch.object(simulation.Simulation, 'act') as mock_act:
-      sim = simulation.Simulation(w)
-      player.interact(sim, StubWindow())
-    mock_act.assert_called_once_with(TEST_ACTION)
-
-  def test_does_not_quit(self):
-    player = MachinePlayer(None, None)
-    self.assertFalse(player.should_quit)
-
-
 class RandomPolicy(object):
   '''A policy which picks actions at random.'''
   def pick_action(self, _):
@@ -274,8 +253,4 @@ def main():
 
 
 if __name__ == '__main__':
-  if '--test' in sys.argv:
-    del sys.argv[sys.argv.index('--test')]
-    unittest.main()
-  else:
-    main()
+  main()

@@ -14,8 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
-
 import movement
 import world
 
@@ -76,23 +74,3 @@ score is the cumulative score of the player in this run of the simulation.'''
     return (0 <= new_x and new_x < self._world.w and
             0 <= new_y and new_y < self._world.h and
             self._world.at(new_state) in ['.', '^', '$'])
-
-
-class TestSimulation(unittest.TestCase):
-  def test_in_terminal_state(self):
-    w = world.World.parse('@^')
-    sim = Simulation(w)
-    self.assertFalse(sim.in_terminal_state)
-    sim.act(movement.ACTION_RIGHT)
-    self.assertTrue(sim.in_terminal_state)
-
-  def test_act_accumulates_score(self):
-    w = world.World.parse('@.')
-    sim = Simulation(w)
-    sim.act(movement.ACTION_RIGHT)
-    sim.act(movement.ACTION_LEFT)
-    self.assertEqual(-2, sim.score)
-
-
-if __name__ == '__main__':
-  unittest.main()

@@ -17,7 +17,7 @@ There are three ways to run the grid.py program:
    the course of several minutes the player first learns to avoid
    spikes, then reach the treasure, and eventually reach the treasure
    in the minimum number of steps. Learning is not saved between runs.
-1. `grid.py --test`: Run the unit tests.
+1. `all_tests.py`: Run the unit tests.
 
 Here are some ideas in ways to extend grid.py. These are increasingly difficult.
 Some early steps may be useful for later steps.

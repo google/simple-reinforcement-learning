@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import random
-import unittest
 
 import movement
 
@@ -98,20 +97,6 @@ Positions are indexed from the origin 0,0 at the top, left of the map.'''
     start_line = copy[y]
     copy[y] = start_line[0:x] + '@' + start_line[x+1:]
     return '\n'.join(copy)
-
-
-class TestWorld(unittest.TestCase):
-  def test_size(self):
-    g = World.parse('@$')
-    self.assertEqual((2, 1), g.size)
-
-  def test_init_state(self):
-    g = World.parse('####\n#.@#\n####')
-    self.assertEqual((2, 1), g.init_state)
-
-  def test_parse_no_init_state_fails(self):
-    with self.assertRaises(WorldFailure):
-      World.parse('#')
 
 
 class Generator(object):
@@ -204,20 +189,3 @@ class Generator(object):
 
   def _is_passable(self, p):
     return p in self._passable
-
-
-class TestGenerator(unittest.TestCase):
-  def test_generate_tiny_world(self):
-    g = Generator(2, 1)
-    w = g.generate()
-    # The world should have a start and goal
-    if w.init_state == (0, 0):
-      self.assertEqual('$', w.at((1, 0)))
-    elif w.init_state == (1, 0):
-      self.assertEqual('$', w.at((0, 0)))
-    else:
-      self.fail('the start position %s is invalid' % (w.init_state,))
-
-
-if __name__ == '__main__':
-  unittest.main()
