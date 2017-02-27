@@ -14,34 +14,26 @@
 
 import unittest
 
-from world import *
-
-
-def load_tests(loader, tests, pattern):
-  suite = unittest.TestSuite()
-  for test_class in (TestWorld, TestGenerator):
-    tests = loader.loadTestsFromTestCase(test_class)
-    suite.addTests(tests)
-  return suite
+from srl import world
 
 
 class TestWorld(unittest.TestCase):
   def test_size(self):
-    g = World.parse('@$')
+    g = world.World.parse('@$')
     self.assertEqual((2, 1), g.size)
 
   def test_init_state(self):
-    g = World.parse('####\n#.@#\n####')
+    g = world.World.parse('####\n#.@#\n####')
     self.assertEqual((2, 1), g.init_state)
 
   def test_parse_no_init_state_fails(self):
-    with self.assertRaises(WorldFailure):
-      World.parse('#')
+    with self.assertRaises(world.WorldFailure):
+      world.World.parse('#')
 
 
 class TestGenerator(unittest.TestCase):
   def test_generate_tiny_world(self):
-    g = Generator(2, 1)
+    g = world.Generator(2, 1)
     w = g.generate()
     # The world should have a start and goal
     if w.init_state == (0, 0):

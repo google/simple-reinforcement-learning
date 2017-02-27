@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2017 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +14,8 @@
 
 import random
 
-import movement
+from srl import movement
+
 
 # Grid world maps are specified with characters a bit like NetHack:
 # #, (blank) are impassable
@@ -143,7 +142,6 @@ class Generator(object):
     self._passable.discard(start)
     end = self._random_passable()
     self._paint(end, '$')
-    print(start, end)
 
     # Paint some traps.
     n_squares = len(self._passable)

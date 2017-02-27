@@ -24,9 +24,9 @@ import random
 import sys
 import time
 
-import movement
-import simulation
-import world
+from srl import movement
+from srl import simulation
+from srl import world
 
 
 # There is also an interactive version of the game. These are keycodes
@@ -49,10 +49,10 @@ QUIT_KEYS = set([KEY_Q, KEY_ESC])
 
 class Game(object):
   '''A simulation that uses curses.'''
-  def __init__(self, world, driver):
+  def __init__(self, the_world, driver):
     '''Creates a new game in world where driver will interact with the game.'''
-    self._world = world
-    self._sim = simulation.Simulation(world)
+    self._world = the_world
+    self._sim = simulation.Simulation(self._world)
     self._driver = driver
 
   def start(self):
@@ -82,9 +82,18 @@ class Game(object):
     window.addstr(self._sim.y, self._sim.x, '@')
 
 
-class HumanPlayer(object):
+class Player(object):
+  '''A Player provides input to the game as a simulation evolves.'''
+  def interact(self, sim, window):
+    # All players have the same interface
+    # pylint: disable=unused-argument
+    pass
+
+
+class HumanPlayer(Player):
   '''A game driver that reads input from the keyboard.'''
   def __init__(self):
+    super(HumanPlayer, self).__init__()
     self._ch = 0
 
   @property
@@ -99,10 +108,11 @@ class HumanPlayer(object):
       sim.reset()
 
 
-class MachinePlayer(object):
+class MachinePlayer(Player):
   '''A game driver which applies a policy, observed by a learner.
 The learner can adjust the policy.'''
   def __init__(self, policy, learner):
+    super(MachinePlayer, self).__init__()
     self._policy = policy
     self._learner = learner
 
@@ -111,6 +121,7 @@ The learner can adjust the policy.'''
     return False
 
   def interact(self, sim, window):
+    super(MachinePlayer, self).interact(sim, window)
     if sim.in_terminal_state:
       time.sleep(1)
       sim.reset()

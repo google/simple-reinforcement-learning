@@ -15,29 +15,25 @@
 from unittest.mock import patch
 import unittest
 
-from grid import *
-import movement
-import simulation
-import world
-
-
-def load_tests(loader, tests, pattern):
-  return loader.loadTestsFromTestCase(TestMachinePlayer)
+from srl import movement
+from srl import simulation
+from srl import world
+from srl import grid
 
 
 class TestMachinePlayer(unittest.TestCase):
   def test_interact(self):
     TEST_ACTION = movement.ACTION_RIGHT
-    q = QTable(-1)
+    q = grid.QTable(-1)
     q.set((0, 0), TEST_ACTION, 1)
 
-    player = MachinePlayer(GreedyQ(q), StubLearner())
+    player = grid.MachinePlayer(grid.GreedyQ(q), grid.StubLearner())
     w = world.World.parse('@.')
     with patch.object(simulation.Simulation, 'act') as mock_act:
       sim = simulation.Simulation(w)
-      player.interact(sim, StubWindow())
+      player.interact(sim, grid.StubWindow())
     mock_act.assert_called_once_with(TEST_ACTION)
 
   def test_does_not_quit(self):
-    player = MachinePlayer(None, None)
+    player = grid.MachinePlayer(None, None)
     self.assertFalse(player.should_quit)

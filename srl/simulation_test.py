@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2017 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,16 +14,22 @@
 
 import unittest
 
-import grid_test
-import simulation_test
-import world_test
+from srl import movement
+from srl import simulation
+from srl import world
 
 
-def load_tests(loader, tests, pattern):
-  test_modules = [grid_test, simulation_test, world_test]
-  return unittest.TestSuite([test_module.load_tests(loader, tests, pattern)
-                             for test_module in test_modules])
+class TestSimulation(unittest.TestCase):
+  def test_in_terminal_state(self):
+    w = world.World.parse('@^')
+    sim = simulation.Simulation(w)
+    self.assertFalse(sim.in_terminal_state)
+    sim.act(movement.ACTION_RIGHT)
+    self.assertTrue(sim.in_terminal_state)
 
-
-if __name__ == '__main__':
-  unittest.main()
+  def test_act_accumulates_score(self):
+    w = world.World.parse('@.')
+    sim = simulation.Simulation(w)
+    sim.act(movement.ACTION_RIGHT)
+    sim.act(movement.ACTION_LEFT)
+    self.assertEqual(-2, sim.score)

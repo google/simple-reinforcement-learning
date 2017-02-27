@@ -5,19 +5,23 @@ uses [Q-learning](https://webdocs.cs.ualberta.ca/~sutton/book/ebook/node65.html)
 to move a player (`@`) around a fixed maze and avoid traps (`^`) while getting
 treasure (`$`) as fast as possible.
 
-There are three ways to run the grid.py program:
+Add the directory containing srl to PYTHONPATH. Then there are three
+ways to run the grid.py program:
 
-1. `grid.py --interactive [--random]`: Use the arrow keys to walk
+1. `srl/grid.py --interactive [--random]`: Use the arrow keys to walk
    around the maze. The episode ends when you reach a trap or the
    treasure. Press space to restart or Q to quit. No learning happens
    in this mode. Use `--random` to generate a random maze instead of
    the fixed maze.
-1. `grid.py --q [--random]`: An &epsilon;-greedy Q-learner repeatedly
-   runs the maze. The parameters are not tuned to learn quickly. Over
-   the course of several minutes the player first learns to avoid
-   spikes, then reach the treasure, and eventually reach the treasure
-   in the minimum number of steps. Learning is not saved between runs.
-1. `all_tests.py`: Run the unit tests.
+
+1. `srl/grid.py --q [--random]`: An &epsilon;-greedy Q-learner
+   repeatedly runs the maze. The parameters are not tuned to learn
+   quickly. Over the course of several minutes the player first learns
+   to avoid spikes, then reach the treasure, and eventually reach the
+   treasure in the minimum number of steps. Learning is not saved
+   between runs.
+
+1. `srl/all_tests.py`: Run the unit tests.
 
 Here are some ideas in ways to extend grid.py. These are increasingly difficult.
 Some early steps may be useful for later steps.

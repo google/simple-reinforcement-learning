@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2016 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,16 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import movement
-import world
+from srl import movement
 
 
 class Simulation(object):
   '''Tracks the player in a world and implements the rules and rewards.
-score is the cumulative score of the player in this run of the simulation.'''
+
+  score is the cumulative score of the player in this run of the
+  simulation.
+  '''
   def __init__(self, world):
     '''Creates a new simulation in world.'''
     self._world = world
+    self.state = None  # Initialized by reset()
     self.reset()
 
   def reset(self):

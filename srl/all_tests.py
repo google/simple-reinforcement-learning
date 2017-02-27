@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright 2017 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,25 +16,16 @@
 
 import unittest
 
-from simulation import *
-import world
+from srl import grid_test
+from srl import simulation_test
+from srl import world_test
 
 
-def load_tests(loader, tests, pattern):
-  return loader.loadTestsFromTestCase(TestSimulation)
+def load_tests(loader, unused_tests, unused_pattern):
+  # pylint: disable=unused-argument
+  test_modules = [grid_test, simulation_test, world_test]
+  return unittest.TestSuite(map(loader.loadTestsFromModule, test_modules))
 
 
-class TestSimulation(unittest.TestCase):
-  def test_in_terminal_state(self):
-    w = world.World.parse('@^')
-    sim = Simulation(w)
-    self.assertFalse(sim.in_terminal_state)
-    sim.act(movement.ACTION_RIGHT)
-    self.assertTrue(sim.in_terminal_state)
-
-  def test_act_accumulates_score(self):
-    w = world.World.parse('@.')
-    sim = Simulation(w)
-    sim.act(movement.ACTION_RIGHT)
-    sim.act(movement.ACTION_LEFT)
-    self.assertEqual(-2, sim.score)
+if __name__ == '__main__':
+  unittest.main()
