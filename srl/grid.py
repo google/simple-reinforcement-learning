@@ -15,8 +15,7 @@
 # limitations under the License.
 
 # TODO:
-# - Decouple learning from the animated display
-# - Implement random maps and approximate value functions
+# - Implement approximate value functions
 
 import collections
 import curses
@@ -24,6 +23,7 @@ import random
 import sys
 import time
 
+from srl import context
 from srl import movement
 from srl import simulation
 from srl import world
@@ -49,28 +49,29 @@ QUIT_KEYS = set([KEY_Q, KEY_ESC])
 
 class Game(object):
   '''A simulation that uses curses.'''
-  def __init__(self, the_world, driver):
+  def __init__(self, the_context, the_world, driver):
     '''Creates a new game in world where driver will interact with the game.'''
+    self._context = the_context
     self._world = the_world
     self._sim = simulation.Simulation(self._world)
     self._driver = driver
 
-  def start(self):
-    '''Sets up and starts the game and runs it until the driver quits.'''
-    curses.initscr()
-    curses.wrapper(self._loop)
+  def run_until_quit(self):
+    '''Runs the game until the driver indicates it should quit.
+
+    Args:
+      context: The context to run the game in.
+    '''
+    self._step()
+    if not self._driver.should_quit:
+      self._context.run_loop.post_task(self.run_until_quit)
 
   # The game loop.
-  def _loop(self, window):
-    while not self._driver.should_quit:
-      # Paint
-      self._draw(window)
-      window.addstr(self._world.h, 0, 'Score: %d' % self._sim.score)
-      window.move(self._sim.y, self._sim.x)
-      window.refresh()
-
-      # Get input, etc.
-      self._driver.interact(self._sim, window)
+  def _step(self):
+    # Paint
+    self._draw(self._context.window)
+    # Get input, etc.
+    self._driver.interact(self._sim, self._context.window)
 
   # Paints the window.
   def _draw(self, window):
@@ -80,6 +81,11 @@ class Game(object):
       window.addstr(y, 0, line)
     # Draw the player
     window.addstr(self._sim.y, self._sim.x, '@')
+    # Draw status
+    window.addstr(self._world.h, 0, 'Score: %d' % self._sim.score)
+    window.move(self._sim.y, self._sim.x)
+    # TODO: Add a display so multiple things can contribute to the output.
+    window.refresh()
 
 
 class Player(object):
@@ -110,7 +116,10 @@ class HumanPlayer(Player):
 
 class MachinePlayer(Player):
   '''A game driver which applies a policy, observed by a learner.
-The learner can adjust the policy.'''
+
+  The learner can adjust the policy.
+  '''
+
   def __init__(self, policy, learner):
     super(MachinePlayer, self).__init__()
     self._policy = policy
@@ -246,11 +255,11 @@ def main():
     print('use --test, --interactive or --q')
     sys.exit(1)
 
-  w = None
+  the_world = None
   if '--random' in sys.argv:
-    w = world.Generator(25, 15).generate()
+    the_world = world.Generator(25, 15).generate()
   else:
-    w = world.World.parse('''\
+    the_world = world.World.parse('''\
   ########
   #..#...#
   #.@#.$.#
@@ -259,8 +268,12 @@ def main():
   ########
   ''')
 
-  game = Game(w, player)
-  game.start()
+  the_context = context.Context()
+
+  game = Game(the_context, the_world, player)
+  the_context.run_loop.post_task(game.run_until_quit)
+
+  the_context.start()
 
 
 if __name__ == '__main__':
