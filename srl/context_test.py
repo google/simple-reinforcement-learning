@@ -40,3 +40,27 @@ class TestRunLoop(unittest.TestCase):
     run_loop.start()
     self.assertEqual(['a', 'b'], log,
                      'run loop should run tasks in the order they are posted')
+
+  def test_post_quit(self):
+    run_loop = context.RunLoop()
+    log = []
+    run_loop.post_task(lambda: log.append('a'))
+    run_loop.post_task(lambda: run_loop.post_quit())
+    run_loop.post_task(lambda: run_loop.post_task(lambda: log.append('c')))
+    run_loop.post_task(lambda: log.append('b'))
+    run_loop.start()
+    self.assertEqual(
+        ['a', 'b'], log,
+        'run loop should run tasks posted before quit, but not after')
+
+  def test_post_repeat(self):
+    run_loop = context.RunLoop()
+    n = 0
+    def count():
+      nonlocal n
+      n += 1
+      if n == 3:
+        run_loop.post_quit()
+    run_loop.post_task(count, repeat=True)
+    run_loop.start()
+    self.assertEqual(3, n, 'the task should have run repetitively')

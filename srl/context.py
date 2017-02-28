@@ -16,6 +16,36 @@ import collections
 import curses
 
 
+class StubFailure(Exception):
+  pass
+
+
+class StubWindow(object):
+  '''A no-op implementation of the game display.'''
+  def addstr(self, y, x, s):
+    pass
+
+  def erase(self):
+    pass
+
+  def getch(self):
+    raise StubFailure('"getch" not implemented; use a mock')
+
+  def move(self, y, x):
+    pass
+
+  def refresh(self):
+    pass
+
+
+class StubContext(object):
+  def __init__(self):
+    self.window = StubWindow()
+
+  def start(self):
+    self.run_loop.start()
+
+
 class Context(object):
   '''Provides the shared curses window and a run loop to other objects.
 
@@ -42,11 +72,23 @@ class RunLoop(object):
 
   def __init__(self):
     self._tasks = collections.deque()
+    self._quit = object()
 
   def start(self):
     while len(self._tasks):
       task = self._tasks.popleft()
+      if task is self._quit:
+        return
       task()
 
-  def post_task(self, task):
-    self._tasks.append(task)
+  def post_task(self, task, repeat=False):
+    if repeat:
+      def repeater():
+        task()
+        self.post_task(repeater)
+      self.post_task(repeater)
+    else:
+      self._tasks.append(task)
+
+  def post_quit(self):
+    self._tasks.append(self._quit)

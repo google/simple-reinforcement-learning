@@ -49,29 +49,19 @@ QUIT_KEYS = set([KEY_Q, KEY_ESC])
 
 class Game(object):
   '''A simulation that uses curses.'''
-  def __init__(self, the_context, the_world, driver):
+  def __init__(self, ctx, the_world, driver):
     '''Creates a new game in world where driver will interact with the game.'''
-    self._context = the_context
+    self._context = ctx
     self._world = the_world
     self._sim = simulation.Simulation(self._world)
     self._driver = driver
 
-  def run_until_quit(self):
-    '''Runs the game until the driver indicates it should quit.
-
-    Args:
-      context: The context to run the game in.
-    '''
-    self._step()
-    if not self._driver.should_quit:
-      self._context.run_loop.post_task(self.run_until_quit)
-
   # The game loop.
-  def _step(self):
+  def step(self):
     # Paint
     self._draw(self._context.window)
     # Get input, etc.
-    self._driver.interact(self._sim, self._context.window)
+    self._driver.interact(self._context, self._sim)
 
   # Paints the window.
   def _draw(self, window):
@@ -90,7 +80,7 @@ class Game(object):
 
 class Player(object):
   '''A Player provides input to the game as a simulation evolves.'''
-  def interact(self, sim, window):
+  def interact(self, ctx, sim):
     # All players have the same interface
     # pylint: disable=unused-argument
     pass
@@ -102,16 +92,14 @@ class HumanPlayer(Player):
     super(HumanPlayer, self).__init__()
     self._ch = 0
 
-  @property
-  def should_quit(self):
-    return self._ch in QUIT_KEYS
-
-  def interact(self, sim, window):
-    self._ch = window.getch()
+  def interact(self, ctx, sim):
+    self._ch = ctx.window.getch()
     if self._ch in KEY_ACTION_MAP and not sim.in_terminal_state:
       sim.act(KEY_ACTION_MAP[self._ch])
     elif self._ch == KEY_SPACE and sim.in_terminal_state:
       sim.reset()
+    elif self._ch in QUIT_KEYS:
+      context.run_loop.post_quit()
 
 
 class MachinePlayer(Player):
@@ -125,43 +113,15 @@ class MachinePlayer(Player):
     self._policy = policy
     self._learner = learner
 
-  @property
-  def should_quit(self):
-    return False
-
-  def interact(self, sim, window):
-    super(MachinePlayer, self).interact(sim, window)
+  def interact(self, ctx, sim):
+    super(MachinePlayer, self).interact(ctx, sim)
     if sim.in_terminal_state:
-      time.sleep(1)
       sim.reset()
     else:
       old_state = sim.state
       action = self._policy.pick_action(sim.state)
       reward = sim.act(action)
       self._learner.observe(old_state, action, reward, sim.state)
-      time.sleep(0.05)
-
-
-class StubFailure(Exception):
-  pass
-
-
-class StubWindow(object):
-  '''A no-op implementation of the game display.'''
-  def addstr(self, y, x, s):
-    pass
-
-  def erase(self):
-    pass
-
-  def getch(self):
-    raise StubFailure('"getch" not implemented; use a mock')
-
-  def move(self, y, x):
-    pass
-
-  def refresh(self):
-    pass
 
 
 class StubLearner(object):
@@ -222,10 +182,6 @@ class GreedyQ(object):
   def __init__(self, q):
     self._q = q
 
-  @property
-  def should_quit(self):
-    return False
-
   def pick_action(self, state):
     return self._q.best(state)[0]
 
@@ -244,6 +200,8 @@ class QLearner(object):
 
 
 def main():
+  ctx = context.Context()
+
   if '--interactive' in sys.argv:
     player = HumanPlayer()
   elif '--q' in sys.argv:
@@ -251,6 +209,8 @@ def main():
     learner = QLearner(q, 0.05, 0.1)
     policy = EpsilonPolicy(GreedyQ(q), RandomPolicy(), 0.01)
     player = MachinePlayer(policy, learner)
+    # Slow the game down to make it fun? to watch.
+    ctx.run_loop.post_task(lambda: time.sleep(0.1), repeat=True)
   else:
     print('use --test, --interactive or --q')
     sys.exit(1)
@@ -268,12 +228,10 @@ def main():
   ########
   ''')
 
-  the_context = context.Context()
+  game = Game(ctx, the_world, player)
+  ctx.run_loop.post_task(game.step, repeat=True)
 
-  game = Game(the_context, the_world, player)
-  the_context.run_loop.post_task(game.run_until_quit)
-
-  the_context.start()
+  ctx.start()
 
 
 if __name__ == '__main__':

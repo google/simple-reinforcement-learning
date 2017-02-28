@@ -15,6 +15,7 @@
 from unittest.mock import patch
 import unittest
 
+from srl import context
 from srl import movement
 from srl import simulation
 from srl import world
@@ -31,9 +32,6 @@ class TestMachinePlayer(unittest.TestCase):
     w = world.World.parse('@.')
     with patch.object(simulation.Simulation, 'act') as mock_act:
       sim = simulation.Simulation(w)
-      player.interact(sim, grid.StubWindow())
+      ctx = context.StubContext()
+      player.interact(ctx, sim)
     mock_act.assert_called_once_with(TEST_ACTION)
-
-  def test_does_not_quit(self):
-    player = grid.MachinePlayer(None, None)
-    self.assertFalse(player.should_quit)
