@@ -40,6 +40,7 @@ class StubWindow(object):
 
 class StubContext(object):
   def __init__(self):
+    self.run_loop = RunLoop()
     self.window = StubWindow()
 
   def start(self):

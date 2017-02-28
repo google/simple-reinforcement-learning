@@ -17,6 +17,7 @@
 # TODO:
 # - Implement approximate value functions
 
+import argparse
 import collections
 import curses
 import random
@@ -99,7 +100,7 @@ class HumanPlayer(Player):
     elif self._ch == KEY_SPACE and sim.in_terminal_state:
       sim.reset()
     elif self._ch in QUIT_KEYS:
-      context.run_loop.post_quit()
+      ctx.run_loop.post_quit()
 
 
 class MachinePlayer(Player):
@@ -200,11 +201,22 @@ class QLearner(object):
 
 
 def main():
+  parser = argparse.ArgumentParser(description='Simple Reinforcement Learning.')
+  group = parser.add_mutually_exclusive_group(required=True)
+  group.add_argument('--interactive', action='store_true',
+                     help='use the keyboard arrow keys to play')
+  group.add_argument('--q', action='store_true',
+                     help='play automatically with Q-learning')
+  parser.add_argument('--random', action='store_true',
+                      help='generate a random map')
+
+  args = parser.parse_args()
+
   ctx = context.Context()
 
-  if '--interactive' in sys.argv:
+  if args.interactive:
     player = HumanPlayer()
-  elif '--q' in sys.argv:
+  elif args.q:
     q = QTable()
     learner = QLearner(q, 0.05, 0.1)
     policy = EpsilonPolicy(GreedyQ(q), RandomPolicy(), 0.01)
@@ -212,11 +224,10 @@ def main():
     # Slow the game down to make it fun? to watch.
     ctx.run_loop.post_task(lambda: time.sleep(0.1), repeat=True)
   else:
-    print('use --test, --interactive or --q')
     sys.exit(1)
 
   the_world = None
-  if '--random' in sys.argv:
+  if args.random:
     the_world = world.Generator(25, 15).generate()
   else:
     the_world = world.World.parse('''\
