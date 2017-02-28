@@ -31,7 +31,7 @@ class TestMachinePlayer(unittest.TestCase):
     player = grid.MachinePlayer(grid.GreedyQ(q), grid.StubLearner())
     w = world.World.parse('@.')
     with patch.object(simulation.Simulation, 'act') as mock_act:
-      sim = simulation.Simulation(w)
+      sim = simulation.Simulation(world.Static(w))
       ctx = context.StubContext()
       player.interact(ctx, sim)
     mock_act.assert_called_once_with(TEST_ACTION)

@@ -50,11 +50,10 @@ QUIT_KEYS = set([KEY_Q, KEY_ESC])
 
 class Game(object):
   '''A simulation that uses curses.'''
-  def __init__(self, ctx, the_world, driver):
+  def __init__(self, ctx, generator, driver):
     '''Creates a new game in world where driver will interact with the game.'''
     self._context = ctx
-    self._world = the_world
-    self._sim = simulation.Simulation(self._world)
+    self._sim = simulation.Simulation(generator)
     self._driver = driver
 
   # The game loop.
@@ -68,12 +67,12 @@ class Game(object):
   def _draw(self, window):
     window.erase()
     # Draw the environment
-    for y, line in enumerate(self._world._lines):
+    for y, line in enumerate(self._sim.world._lines):
       window.addstr(y, 0, line)
     # Draw the player
     window.addstr(self._sim.y, self._sim.x, '@')
     # Draw status
-    window.addstr(self._world.h, 0, 'Score: %d' % self._sim.score)
+    window.addstr(self._sim.world.h, 0, 'Score: %d' % self._sim.score)
     window.move(self._sim.y, self._sim.x)
     # TODO: Add a display so multiple things can contribute to the output.
     window.refresh()
@@ -226,20 +225,19 @@ def main():
   else:
     sys.exit(1)
 
-  the_world = None
   if args.random:
-    the_world = world.Generator(25, 15).generate()
+    generator = world.Generator(25, 15)
   else:
-    the_world = world.World.parse('''\
+    generator = world.Static(world.World.parse('''\
   ########
   #..#...#
   #.@#.$.#
   #.##^^.#
   #......#
   ########
-  ''')
+  '''))
 
-  game = Game(ctx, the_world, player)
+  game = Game(ctx, generator, player)
   ctx.run_loop.post_task(game.step, repeat=True)
 
   ctx.start()

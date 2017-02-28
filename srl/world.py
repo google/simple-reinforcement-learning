@@ -98,6 +98,14 @@ Positions are indexed from the origin 0,0 at the top, left of the map.'''
     return '\n'.join(copy)
 
 
+class Static(object):
+  def __init__(self, value):
+    self._value = value
+
+  def generate(self):
+    return self._value
+
+
 class Generator(object):
   '''Generates random grid worlds.'''
   def __init__(self, width, height):

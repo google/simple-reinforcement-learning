@@ -18,8 +18,12 @@ ways to run the grid.py program:
    repeatedly runs the maze. The parameters are not tuned to learn
    quickly. Over the course of several minutes the player first learns
    to avoid spikes, then reach the treasure, and eventually reach the
-   treasure in the minimum number of steps. Learning is not saved
-   between runs.
+   treasure in the minimum number of steps.
+
+   Learning is not saved between runs.
+
+   The Q network is not reset between episodes, so it does not
+   generalize to new random maps. This leads to very poor performance.
 
 1. `srl/all_tests.py`: Run the unit tests.
 

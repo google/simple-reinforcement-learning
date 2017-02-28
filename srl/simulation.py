@@ -21,21 +21,25 @@ class Simulation(object):
   score is the cumulative score of the player in this run of the
   simulation.
   '''
-  def __init__(self, world):
-    '''Creates a new simulation in world.'''
-    self._world = world
-    self.state = None  # Initialized by reset()
+  def __init__(self, generator):
+    self._generator = generator
+
+    # Initialized by reset()
+    self.state = None
+    self.world = None
+
     self.reset()
 
   def reset(self):
     '''Resets the simulation to the initial state.'''
-    self.state = self._world.init_state
+    self.world = self._generator.generate()
+    self.state = self.world.init_state
     self.score = 0
 
   @property
   def in_terminal_state(self):
     '''Whether the simulation is in a terminal state (stopped.)'''
-    return self._world.at(self.state) in ['^', '$']
+    return self.world.at(self.state) in ['^', '$']
 
   @property
   def x(self):
@@ -55,7 +59,7 @@ class Simulation(object):
     new_state = self.x + delta[0], self.y + delta[1]
 
     if self._valid_move(new_state):
-      ch = self._world.at(new_state)
+      ch = self.world.at(new_state)
       if ch == '^':
         reward = -10000
       elif ch == '$':
@@ -72,6 +76,6 @@ class Simulation(object):
     '''Gets whether movement to new_state is a valid move.'''
     new_x, new_y = new_state
     # TODO: Could check that there's no teleportation cheating.
-    return (0 <= new_x and new_x < self._world.w and
-            0 <= new_y and new_y < self._world.h and
-            self._world.at(new_state) in ['.', '^', '$'])
+    return (0 <= new_x and new_x < self.world.w and
+            0 <= new_y and new_y < self.world.h and
+            self.world.at(new_state) in ['.', '^', '$'])
