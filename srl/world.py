@@ -105,6 +105,11 @@ class Static(object):
   def generate(self):
     return self._value
 
+  @property
+  def size(self):
+    '''The size of the grid world, width by height.'''
+    return self._value.size
+
 
 class Generator(object):
   '''Generates random grid worlds.'''
@@ -119,6 +124,10 @@ class Generator(object):
     self._height = height
     self._grid = None
     self._passable = None
+
+  @property
+  def size(self):
+    return (self._width, self._height)
 
   def generate(self):
     '''Generates and returns a new world.'''

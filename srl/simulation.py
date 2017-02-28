@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import numpy as np
+
 from srl import movement
 
 
@@ -39,7 +41,7 @@ class Simulation(object):
   @property
   def in_terminal_state(self):
     '''Whether the simulation is in a terminal state (stopped.)'''
-    return self.world.at(self.state) in ['^', '$']
+    return self.world.at(self.state) in ['^', '$'] or self.score < -500
 
   @property
   def x(self):
@@ -79,3 +81,28 @@ class Simulation(object):
     return (0 <= new_x and new_x < self.world.w and
             0 <= new_y and new_y < self.world.h and
             self.world.at(new_state) in ['.', '^', '$'])
+
+  def to_array(self):
+    '''Converts the state of a simulation to numpy ndarray.
+
+    The returned array has numpy.int8 units with the following mapping.
+    This mapping has no special meaning because these indices are fed
+    into an embedding layer.
+        ' ' -> 0
+        '#' -> 1
+        '$' -> 2
+        '.' -> 3
+        '@' -> 4
+        '^' -> 5
+    Args:
+      sim: A simulation.Simulation to externalize the state of.
+    Returns:
+      The world map and player position represented as an numpy ndarray.
+    '''
+    key = ' #$.@^'
+    w = np.empty(shape=(self.world.h, self.world.w), dtype=np.int8)
+    for v in range(self.world.h):
+      for u in range(self.world.w):
+        w[v, u] = key.index(self.world.at((u, v)))
+    w[self.y, self.x] = key.index('@')
+    return w

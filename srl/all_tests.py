@@ -18,13 +18,20 @@ import unittest
 
 from srl import context_test
 from srl import grid_test
+from srl import policy_gradient_test
 from srl import simulation_test
 from srl import world_test
 
 
 def load_tests(loader, unused_tests, unused_pattern):
   # pylint: disable=unused-argument
-  test_modules = [context_test, grid_test, simulation_test, world_test]
+  test_modules = [
+      context_test,
+      grid_test,
+      policy_gradient_test,
+      simulation_test,
+      world_test,
+    ]
   return unittest.TestSuite(map(loader.loadTestsFromModule, test_modules))
 
 

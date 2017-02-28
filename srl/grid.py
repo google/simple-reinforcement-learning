@@ -22,10 +22,12 @@ import collections
 import curses
 import random
 import sys
+import tensorflow as tf
 import time
 
 from srl import context
 from srl import movement
+from srl import policy_gradient
 from srl import simulation
 from srl import world
 
@@ -55,6 +57,9 @@ class Game(object):
     self._context = ctx
     self._sim = simulation.Simulation(generator)
     self._driver = driver
+    self._wins = 0
+    self._losses = 0
+    self._was_in_terminal_state = False
 
   # The game loop.
   def step(self):
@@ -62,6 +67,12 @@ class Game(object):
     self._draw(self._context.window)
     # Get input, etc.
     self._driver.interact(self._context, self._sim)
+    if self._sim.in_terminal_state and not self._was_in_terminal_state:
+      if self._sim.score < 0:
+        self._losses += 1
+      else:
+        self._wins += 1
+    self._was_in_terminal_state = self._sim.in_terminal_state
 
   # Paints the window.
   def _draw(self, window):
@@ -72,7 +83,9 @@ class Game(object):
     # Draw the player
     window.addstr(self._sim.y, self._sim.x, '@')
     # Draw status
-    window.addstr(self._sim.world.h, 0, 'Score: %d' % self._sim.score)
+    window.addstr(self._sim.world.h, 0,
+                  'W/L: %d/%d   Score: %d' %
+                  (self._wins, self._losses, self._sim.score))
     window.move(self._sim.y, self._sim.x)
     # TODO: Add a display so multiple things can contribute to the output.
     window.refresh()
@@ -206,24 +219,14 @@ def main():
                      help='use the keyboard arrow keys to play')
   group.add_argument('--q', action='store_true',
                      help='play automatically with Q-learning')
+  group.add_argument('--pg', action='store_true',
+                     help='play automatically with policy gradients')
   parser.add_argument('--random', action='store_true',
                       help='generate a random map')
 
   args = parser.parse_args()
 
   ctx = context.Context()
-
-  if args.interactive:
-    player = HumanPlayer()
-  elif args.q:
-    q = QTable()
-    learner = QLearner(q, 0.05, 0.1)
-    policy = EpsilonPolicy(GreedyQ(q), RandomPolicy(), 0.01)
-    player = MachinePlayer(policy, learner)
-    # Slow the game down to make it fun? to watch.
-    ctx.run_loop.post_task(lambda: time.sleep(0.1), repeat=True)
-  else:
-    sys.exit(1)
 
   if args.random:
     generator = world.Generator(25, 15)
@@ -236,6 +239,28 @@ def main():
   #......#
   ########
   '''))
+
+  if args.interactive:
+    player = HumanPlayer()
+  elif args.q:
+    q = QTable()
+    learner = QLearner(q, 0.05, 0.1)
+    policy = EpsilonPolicy(GreedyQ(q), RandomPolicy(), 0.01)
+    player = MachinePlayer(policy, learner)
+  elif args.pg:
+    g = tf.Graph()
+    s = tf.Session(graph=g)
+    player = policy_gradient.PolicyGradientPlayer(g, s, generator.size)
+    with g.as_default():
+      init = tf.global_variables_initializer()
+      s.run(init)
+  else:
+    sys.exit(1)
+
+  is_automatic = args.q or args.pg
+  if is_automatic:
+    # Slow the game down to make it fun? to watch.
+    ctx.run_loop.post_task(lambda: time.sleep(0.1), repeat=True)
 
   game = Game(ctx, generator, player)
   ctx.run_loop.post_task(game.step, repeat=True)

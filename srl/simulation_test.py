@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import numpy as np
 import unittest
 
 from srl import movement
@@ -33,3 +34,10 @@ class TestSimulation(unittest.TestCase):
     sim.act(movement.ACTION_RIGHT)
     sim.act(movement.ACTION_LEFT)
     self.assertEqual(-2, sim.score)
+
+  def test_to_array(self):
+    w = world.World.parse('$.@^#')
+    sim = simulation.Simulation(world.Static(w))
+    self.assertTrue(
+      (np.array([[2, 3, 4, 5, 1]], dtype=np.int8) == sim.to_array())
+      .all())
