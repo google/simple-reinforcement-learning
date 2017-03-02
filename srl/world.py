@@ -19,11 +19,11 @@ from srl import movement
 
 # Grid world maps are specified with characters a bit like NetHack:
 # #, (blank) are impassable
-# . is passable
+# . , are passable; . gets trodden into , when visited
 # @ is the player start point
 # ^ is a trap, with a large negative reward
 # $ is the goal
-VALID_CHARS = set(['#', '.', '@', '$', '^', ' '])
+VALID_CHARS = set(['#', '.', ',', '@', '$', '^', ' '])
 
 
 class WorldFailure(Exception):
@@ -89,6 +89,14 @@ denoted by @.'''
 Positions are indexed from the origin 0,0 at the top, left of the map.'''
     x, y = pos
     return self._lines[y][x]
+
+  def update(self, pos, ch):
+    # TODO: Document this.
+    # TODO: Change the map representation to something more efficient to mutate.
+    assert ch in VALID_CHARS
+    x, y = pos
+    line = self._lines[y]
+    self._lines[y] = line[0:x] + ch + line[x+1:]
 
   def pretty_str(self):
     copy = [] + self._lines

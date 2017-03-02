@@ -29,6 +29,7 @@ class Simulation(object):
     # Initialized by reset()
     self.state = None
     self.world = None
+    self.steps = None
 
     self.reset()
 
@@ -37,11 +38,12 @@ class Simulation(object):
     self.world = self._generator.generate()
     self.state = self.world.init_state
     self.score = 0
+    self.steps = 0
 
   @property
   def in_terminal_state(self):
     '''Whether the simulation is in a terminal state (stopped.)'''
-    return self.world.at(self.state) in ['^', '$'] or self.score < -500
+    return self.world.at(self.state) in ['^', '$'] or self.steps > 300
 
   @property
   def x(self):
@@ -57,6 +59,11 @@ class Simulation(object):
     '''Performs action and returns the reward from that step.'''
     reward = -1
 
+    self.steps += 1
+    # TODO: Encode the move limit it one place.
+    if self.steps > 295:
+      reward -= 1000  # Too slow penalty.
+
     delta = movement.MOVEMENT[action]
     new_state = self.x + delta[0], self.y + delta[1]
 
@@ -66,10 +73,12 @@ class Simulation(object):
         reward = -10000
       elif ch == '$':
         reward = 10000
+      else:
+        self.world.update(new_state, ',')
       self.state = new_state
     else:
       # Penalty for hitting the walls.
-      reward -= 5
+      reward -= 3
 
     self.score += reward
     return reward
@@ -80,7 +89,7 @@ class Simulation(object):
     # TODO: Could check that there's no teleportation cheating.
     return (0 <= new_x and new_x < self.world.w and
             0 <= new_y and new_y < self.world.h and
-            self.world.at(new_state) in ['.', '^', '$'])
+            self.world.at(new_state) in ['.', ',', '^', '$'])
 
   def to_array(self):
     '''Converts the state of a simulation to numpy ndarray.
@@ -92,14 +101,15 @@ class Simulation(object):
         '#' -> 1
         '$' -> 2
         '.' -> 3
-        '@' -> 4
-        '^' -> 5
+        ',' -> 4
+        '@' -> 5
+        '^' -> 6
     Args:
       sim: A simulation.Simulation to externalize the state of.
     Returns:
       The world map and player position represented as an numpy ndarray.
     '''
-    key = ' #$.@^'
+    key = ' #$.,@^'
     w = np.empty(shape=(self.world.h, self.world.w), dtype=np.int8)
     for v in range(self.world.h):
       for u in range(self.world.w):

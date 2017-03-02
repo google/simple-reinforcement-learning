@@ -248,7 +248,7 @@ class PolicyGradientNetwork(object):
       })
 
 
-_EXPERIENCE_BUFFER_SIZE = 5
+_EXPERIENCE_BUFFER_SIZE = 30
 
 
 class PolicyGradientPlayer(grid.Player):

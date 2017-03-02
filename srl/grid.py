@@ -229,7 +229,7 @@ def main():
   ctx = context.Context()
 
   if args.random:
-    generator = world.Generator(25, 15)
+    generator = world.Generator(15, 12)
   else:
     generator = world.Static(world.World.parse('''\
   ########
