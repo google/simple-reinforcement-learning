@@ -27,6 +27,7 @@ import time
 
 from srl import context
 from srl import movement
+from srl import player
 from srl import policy_gradient
 from srl import simulation
 from srl import world
@@ -91,15 +92,7 @@ class Game(object):
     window.refresh()
 
 
-class Player(object):
-  '''A Player provides input to the game as a simulation evolves.'''
-  def interact(self, ctx, sim):
-    # All players have the same interface
-    # pylint: disable=unused-argument
-    pass
-
-
-class HumanPlayer(Player):
+class HumanPlayer(player.Player):
   '''A game driver that reads input from the keyboard.'''
   def __init__(self):
     super(HumanPlayer, self).__init__()
@@ -115,7 +108,7 @@ class HumanPlayer(Player):
       ctx.run_loop.post_quit()
 
 
-class MachinePlayer(Player):
+class MachinePlayer(player.Player):
   '''A game driver which applies a policy, observed by a learner.
 
   The learner can adjust the policy.

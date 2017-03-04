@@ -22,6 +22,24 @@ from srl import world
 import srl.policy_gradient as pg
 
 
+class TestReplayBuffer(unittest.TestCase):
+  def test_fillWithPositive(self):
+    rb = pg.ReplayBuffer(2)
+    self.assertEquals(0, rb.size)
+    rb.add(1, 'foo')
+    self.assertEquals(1, rb.size)
+    rb.add(2, 'bar')
+    self.assertEquals(2, rb.size)
+
+    rb.add(3, 'foo')
+    self.assertEquals(2, rb.size, 'should not grow beyond capacity')
+
+  def test_sample(self):
+    rb = pg.ReplayBuffer(1)
+    rb.add(42, 'foo')
+    self.assertEquals('foo', rb.sample())
+
+
 class TestPolicyGradientNetwork(unittest.TestCase):
   def testPredict(self):
     g = tf.Graph()
@@ -33,8 +51,7 @@ class TestPolicyGradientNetwork(unittest.TestCase):
       s.run(init)
 
     sim = simulation.Simulation(world.Generator(11, 7))
-    state = sim.to_array()
-    [[act], _] = net.predict(s, [state])
+    [[act], _] = net.predict(s, [sim.to_array()], [sim.score])
     self.assertTrue(0 <= act)
     self.assertTrue(act < len(movement.ALL_ACTIONS))
 
@@ -49,7 +66,8 @@ class TestPolicyGradientNetwork(unittest.TestCase):
 
     sim = simulation.Simulation(world.Generator(4, 4))
     state = sim.to_array()
-    net.train(s, [[(state, 3, 7), (state, 3, -1)], [(state, 0, 1000)]])
+    net.train(s, [[(state, 0, 3, 7), (state, -1, 3, -1)],
+                  [(state, 0, 0, 1000)]])
 
   def testActionOut_untrainedPrediction(self):
     g = tf.Graph()
@@ -60,7 +78,10 @@ class TestPolicyGradientNetwork(unittest.TestCase):
       init = tf.global_variables_initializer()
       s.run(init)
     act = s.run(net.action_out,
-                feed_dict={net.state: [np.zeros((17, 13))]})
+                feed_dict={
+                  net.state: [np.zeros((17, 13))],
+                  net.score: np.zeros((1,)),
+                })
     self.assertTrue(0 <= act)
     self.assertTrue(act < len(movement.ALL_ACTIONS))
 
@@ -73,6 +94,7 @@ class TestPolicyGradientNetwork(unittest.TestCase):
       s.run(init)
     s.run(net.update, feed_dict={
         net.state: np.zeros((7, 13, 23)),
+        net.score: np.zeros((7,)),
         net.action_in: np.zeros((7, 1)),
         net.advantage: np.zeros((7, 1)),
       })
@@ -92,8 +114,9 @@ class TestPolicyGradientNetwork(unittest.TestCase):
     for _ in range(10):
       loss, _ = s.run([net.loss, net.update], feed_dict={
             net.state: [state],
+            net.score: [-50],
             net.action_in: [[1]],
-            net.advantage: [[2]]
+            net.advantage: [[2]],
           })
       losses.append(loss)
     self.assertTrue(losses[-1] < losses[0])

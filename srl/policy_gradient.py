@@ -20,17 +20,48 @@ https://medium.com/@awjuliani/super-simple-reinforcement-learning-tutorial-part-
 
 import collections
 import numpy as np
+import random
 import sys
 import tensorflow as tf
 
-from srl import grid
 from srl import movement
+from srl import player
 from srl import world
 
 
 _EMBEDDING_SIZE = 3
 _FEATURE_SIZE = len(world.VALID_CHARS)
 _ACTION_SIZE = len(movement.ALL_ACTIONS)
+
+
+class ReplayBuffer(object):
+  def __init__(self, max_size):
+    self._max_size = max_size
+    self._positive = collections.deque()
+    self._negative = collections.deque()
+
+  @property
+  def size(self):
+    return len(self._positive) + len(self._negative)
+
+  def add(self, final_score, experience):
+    if self.size >= self._max_size:
+      if len(self._positive) > len(self._negative):
+        self._positive.pop()
+      else:
+        self._negative.pop()
+    if final_score > 0:
+      self._positive.append(experience)
+    else:
+      self._negative.append(experience)
+
+  def sample(self):
+    assert self.size > 0
+    n = random.randint(0, self.size - 1)
+    if n < len(self._positive):
+      return self._positive[n]
+    else:
+      return self._negative[n - len(self._positive)]
 
 
 class PolicyGradientNetwork(object):
@@ -41,6 +72,8 @@ class PolicyGradientNetwork(object):
 
     state: Feed a world-sized array for selecting an action.
         [-1, h, w] int32
+    score: The score, also used for selecting an action. [-1, 1]
+        int32.
     action_out: Produces an action, fed state.
 
     action_in: Feed the responsible actions for the rewards.
@@ -51,6 +84,7 @@ class PolicyGradientNetwork(object):
 
     loss: Training loss.
     summary: Merged summaries.
+
   '''
 
   def __init__(self, name, graph, world_size_h_w):
@@ -67,6 +101,8 @@ class PolicyGradientNetwork(object):
     with graph.as_default():
       initializer = tf.contrib.layers.xavier_initializer()
       with tf.variable_scope(name) as self.variables:
+        self.score = tf.placeholder(tf.int32, shape=[None])
+        score = tf.expand_dims(tf.cast(self.score, dtype=tf.float32), axis=-1)
         self.state = tf.placeholder(tf.int32, shape=[None, h, w])
 
         # Input embedding
@@ -131,11 +167,12 @@ class PolicyGradientNetwork(object):
         shrunk_h = (shrunk_h + conv_3_stride - 1) // conv_3_stride
         shrunk_w = (shrunk_w + conv_3_stride - 1) // conv_3_stride
 
-        # Resupply the input at this point.
+        # Resupply the input, and introduce the score, at this point.
         resupply = tf.concat([
               tf.reshape(conv_3,
                          [-1, shrunk_h * shrunk_w * conv_3_out_channels]),
-              tf.reshape(embedding_lookup, [-1, h * w * _EMBEDDING_SIZE])
+              tf.reshape(embedding_lookup, [-1, h * w * _EMBEDDING_SIZE]),
+              score
             ], 1, name='resupply')
 
         # First fully connected layer.
@@ -202,20 +239,21 @@ class PolicyGradientNetwork(object):
 
         self.summary = tf.summary.merge_all()
 
-  def predict(self, session, states):
+  def predict(self, session, states, scores):
     '''Chooses actions for a list of states.
 
     Args:
       session: The TensorFlow session to run the net in.
       states: A list of simulation states which have been serialized
           to arrays.
+      scores: A list of simulation scores for those states.
 
     Returns:
       An array of actions, 0 .. 4 and an array of array of
       probabilities.
     '''
     return session.run([self.action_out, self.action_softmax],
-                       feed_dict={self.state: states})
+                       feed_dict={self.state: states, self.score: scores})
 
   def train(self, session, episodes):
     '''Trains the network.
@@ -227,47 +265,54 @@ class PolicyGradientNetwork(object):
     '''
     size = sum(map(len, episodes))
     state = np.empty([size, self._h, self._w])
+    score = np.empty([size])
     action_in = np.empty([size, 1])
     advantage = np.empty([size, 1])
     i = 0
     for episode in episodes:
       r = 0.0
-      for step_state, action, reward in reversed(episode):
+      for step_state, step_score, action, reward in reversed(episode):
         state[i,:,:] = step_state
+        score[i] = step_score
         action_in[i,0] = action
         r = reward + 0.97 * r
         advantage[i,0] = r
         i += 1
     # Scale rewards to have zero mean, unit variance
+    # TODO(dominicc): Consider removing the zero mean.
     advantage = (advantage - np.mean(advantage)) / np.var(advantage)
 
     session.run([self.summary, self.update], feed_dict={
         self.state: state,
+        self.score: score,
         self.action_in: action_in,
         self.advantage: advantage
       })
 
 
-_EXPERIENCE_BUFFER_SIZE = 30
+_EXPERIENCE_BUFFER_SIZE = 100
+_BATCH_SIZE = 20
 
 
-class PolicyGradientPlayer(grid.Player):
+class PolicyGradientPlayer(player.Player):
   def __init__(self, graph, session, world_size_w_h):
     super(PolicyGradientPlayer, self).__init__()
     w, h = world_size_w_h
     self._net = PolicyGradientNetwork('net', graph, (h, w))
-    self._experiences = collections.deque([], _EXPERIENCE_BUFFER_SIZE)
+    self._experiences = ReplayBuffer(_EXPERIENCE_BUFFER_SIZE)
     self._experience = []
     self._session = session
 
   def interact(self, ctx, sim):
     if sim.in_terminal_state:
-      self._experiences.append(self._experience)
+      self._experiences.add(sim.score, self._experience)
       self._experience = []
-      self._net.train(self._session, self._experiences)
+      self._net.train(self._session,
+                      [self._experiences.sample() for _ in range(_BATCH_SIZE)])
       sim.reset()
     else:
       state = sim.to_array()
-      [[action], _] = self._net.predict(self._session, [state])
+      score = sim.score
+      [[action], _] = self._net.predict(self._session, [state], [0])
       reward = sim.act(movement.ALL_ACTIONS[action])
-      self._experience.append((state, action, reward))
+      self._experience.append((state, score, action, reward))

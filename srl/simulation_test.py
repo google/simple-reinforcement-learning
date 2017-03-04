@@ -36,8 +36,8 @@ class TestSimulation(unittest.TestCase):
     self.assertEqual(-2, sim.score)
 
   def test_to_array(self):
-    w = world.World.parse('$.@^#')
+    w = world.World.parse('$,.@^#')
     sim = simulation.Simulation(world.Static(w))
     self.assertTrue(
-      (np.array([[2, 3, 4, 5, 1]], dtype=np.int8) == sim.to_array())
+      (np.array([[2, 4, 3, 5, 6, 1]], dtype=np.int8) == sim.to_array())
       .all())
