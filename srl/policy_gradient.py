@@ -19,6 +19,7 @@ https://medium.com/@awjuliani/super-simple-reinforcement-learning-tutorial-part-
 '''
 
 import collections
+import datetime
 import numpy as np
 import random
 import sys
@@ -84,7 +85,6 @@ class PolicyGradientNetwork(object):
 
     loss: Training loss.
     summary: Merged summaries.
-
   '''
 
   def __init__(self, name, graph, world_size_h_w):
@@ -221,17 +221,21 @@ class PolicyGradientNetwork(object):
         action_one_hot = tf.one_hot(self.action_in, _ACTION_SIZE,
                                     dtype=tf.float32)
         action_advantage = self.advantage * action_one_hot
-        loss_policy = -tf.reduce_mean(
+        loss_policy = -100.0 * tf.reduce_mean(
             tf.reduce_sum(tf.log(self.action_softmax) * action_advantage, 1),
             name='loss_policy')
         # TODO: Investigate whether regularization losses are sums or
         # means and consider removing the division.
-        loss_regularization = (0.05 / tf.to_float(tf.shape(self.state)[0]) *
+        loss_regularization = (0.005 / tf.to_float(tf.shape(self.state)[0]) *
             sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
-        self.loss = loss_policy + loss_regularization
+        # Encourage indecision.
+        loss_entropy = -0.01 * tf.reduce_mean(
+            self.action_softmax * (1.0 - self.action_softmax))
+        self.loss = loss_policy + loss_regularization + loss_entropy
 
         tf.summary.scalar('loss_policy', loss_policy)
         tf.summary.scalar('loss_regularization', loss_regularization)
+        tf.summary.scalar('loss_entropy', loss_entropy)
 
         # TODO: Use a decaying learning rate
         optimizer = tf.train.AdamOptimizer(learning_rate=0.05)
@@ -262,6 +266,10 @@ class PolicyGradientNetwork(object):
       episodes: A list of episodes. Each episode is a list of
           3-tuples with the state, the chosen action, and the
           reward.
+
+    Returns:
+      Training loss summaries suitable for adding to a file for
+      TensorBoard.
     '''
     size = sum(map(len, episodes))
     state = np.empty([size, self._h, self._w])
@@ -282,12 +290,13 @@ class PolicyGradientNetwork(object):
     # TODO(dominicc): Consider removing the zero mean.
     advantage = (advantage - np.mean(advantage)) / np.var(advantage)
 
-    session.run([self.summary, self.update], feed_dict={
+    summary, _ = session.run([self.summary, self.update], feed_dict={
         self.state: state,
         self.score: score,
         self.action_in: action_in,
         self.advantage: advantage
       })
+    return summary
 
 
 _EXPERIENCE_BUFFER_SIZE = 100
@@ -302,13 +311,16 @@ class PolicyGradientPlayer(player.Player):
     self._experiences = ReplayBuffer(_EXPERIENCE_BUFFER_SIZE)
     self._experience = []
     self._session = session
+    self._summary_writer = tf.summary.FileWriter(
+        '/tmp/srlpg/%s' % datetime.datetime.now().isoformat())
 
   def interact(self, ctx, sim):
     if sim.in_terminal_state:
       self._experiences.add(sim.score, self._experience)
       self._experience = []
-      self._net.train(self._session,
+      summary = self._net.train(self._session,
                       [self._experiences.sample() for _ in range(_BATCH_SIZE)])
+      self._summary_writer.add_summary(summary)
       sim.reset()
     else:
       state = sim.to_array()
