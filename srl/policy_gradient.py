@@ -208,7 +208,8 @@ class PolicyGradientNetwork(object):
 
         # Sum the components of the softmax
         probability_histogram = tf.cumsum(self.action_softmax, axis=1)
-        sample = tf.random_uniform(tf.shape(probability_histogram)[:-1])
+        sample = tf.random_uniform(tf.shape(probability_histogram)[0:1])
+        sample = tf.expand_dims(sample, axis=-1)
         filtered = tf.where(probability_histogram >= sample,
                             probability_histogram,
                             tf.ones_like(probability_histogram))
@@ -328,3 +329,29 @@ class PolicyGradientPlayer(player.Player):
       [[action], _] = self._net.predict(self._session, [state], [0])
       reward = sim.act(movement.ALL_ACTIONS[action])
       self._experience.append((state, score, action, reward))
+
+  def visualize(self, ctx, sim, window):
+    visitable = []
+    for u in range(sim.world.w):
+      for v in range(sim.world.h):
+        if sim.world.at((u, v)) in '.,':
+          visitable.append((v, u))
+    state = sim.to_array()
+    # TODO: This hard-codes indexes which must line up with Simulation.to_array.
+    state[sim.state[1], sim.state[0]] = 3 # 3 == .
+
+    states = np.empty((len(visitable), sim.world.h, sim.world.w))
+    for i, (v, u) in enumerate(visitable):
+      states[i,:,:] = state
+      states[i,v,u] = 5  # 5 == @
+
+    scores = [sim.score] * len(visitable)
+    [moves, _] = self._net.predict(self._session, states, scores)
+
+    window.erase()
+    symbols = ['\N{UPWARDS SANS-SERIF ARROW}',
+               '\N{RIGHTWARDS SANS-SERIF ARROW}',
+               '\N{DOWNWARDS SANS-SERIF ARROW}',
+               '\N{LEFTWARDS SANS-SERIF ARROW}']
+    for i, (v, u) in enumerate(visitable):
+      window.addstr(v, u, symbols[moves[i]])

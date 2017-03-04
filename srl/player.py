@@ -18,3 +18,8 @@ class Player(object):
     # All players have the same interface
     # pylint: disable=unused-argument
     pass
+
+  def visualize(self, ctx, sim, window):
+    # All players have the same interface
+    # pylint: disable=unused-argument
+    pass
