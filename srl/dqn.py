@@ -344,29 +344,37 @@ _BATCH_SIZE = 100
 
 class DeepQPlayer(player.Player):
   def __init__(self, graph, session, world_size_w_h):
-    super(PolicyGradientPlayer, self).__init__()
+    super(DeepQPlayer, self).__init__()
     w, h = world_size_w_h
-    self._net = PolicyGradientNetwork('net', graph, (h, w))
+    target = DeepQNetwork('target', graph, (h, w))
+    self._net = DeepQNetwork('net', graph, (h, w), target=target)
     self._experiences = ReplayBuffer(_EXPERIENCE_BUFFER_SIZE)
-    self._experience = []
     self._session = session
     self._summary_writer = tf.summary.FileWriter(
         '/tmp/srlpg/%s' % datetime.datetime.now().isoformat())
+    self._training_epoch = 0
 
   def interact(self, ctx, sim):
     if sim.in_terminal_state:
-      self._experiences.add(sim.score, self._experience)
-      self._experience = []
-      summary = self._net.train(self._session,
-                      [self._experiences.sample() for _ in range(_BATCH_SIZE)])
-      self._summary_writer.add_summary(summary)
       sim.reset()
     else:
       state = sim.to_array()
-      score = sim.score
-      [[action], _] = self._net.predict(self._session, [state], [0])
+      if random.random() < 0.1:
+        action = random.randint(0, len(movement.ALL_ACTIONS) - 1)
+      else:
+        [[action], _] = self._net.predict(self._session, [state])
       reward = sim.act(movement.ALL_ACTIONS[action])
-      self._experience.append((state, score, action, reward))
+      self._experiences.add(
+          sim.score,
+          (state, action, reward, sim.to_array(), sim.in_terminal_state))
+
+      self._training_epoch += 1
+      summary = self._net.train(
+          self._session,
+          [self._experiences.sample() for _ in range(_BATCH_SIZE)])
+      if self._training_epoch % 100 == 99:
+        self._session.run(self._net.update_target)
+      self._summary_writer.add_summary(summary)
 
   def visualize(self, ctx, sim, window):
     visitable = []

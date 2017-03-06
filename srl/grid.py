@@ -251,7 +251,7 @@ def main():
   else:
     sys.exit(1)
 
-  is_automatic = args.q or args.pg
+  is_automatic = args.q or args.dqn
   if is_automatic:
     # Slow the game down to make it fun? to watch.
     ctx.run_loop.post_task(lambda: time.sleep(0.1), repeat=True)
