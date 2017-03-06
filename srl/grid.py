@@ -69,6 +69,7 @@ class Game(object):
     # Get input, etc.
     self._driver.interact(self._context, self._sim)
     if self._sim.in_terminal_state and not self._was_in_terminal_state:
+      self._context.window.clear()
       if self._sim.score < 0:
         self._losses += 1
       else:

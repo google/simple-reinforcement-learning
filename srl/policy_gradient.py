@@ -58,11 +58,19 @@ class ReplayBuffer(object):
 
   def sample(self):
     assert self.size > 0
-    n = random.randint(0, self.size - 1)
-    if n < len(self._positive):
-      return self._positive[n]
+    source = None
+    if len(self._negative) == 0:
+      source = self._positive
+    elif len(self._positive) == 0:
+      source = self._negative
+    # This sample is unbalanced to weight positive and negative
+    # experiences equally. In practice there are more spikes than
+    # rewards and more negative experiences.
+    elif random.randint(0, 1) == 0:
+      source = self._positive
     else:
-      return self._negative[n - len(self._positive)]
+      source = self._negative
+    return source[random.randint(0, len(source) - 1)]
 
 
 class PolicyGradientNetwork(object):
@@ -121,7 +129,7 @@ class PolicyGradientNetwork(object):
             trainable=True,
             inputs=embedding_lookup,
             num_outputs=conv_1_out_channels,
-            kernel_size=[3, 3],
+            kernel_size=[5, 5],
             stride=1,
             padding='SAME',
             activation_fn=tf.nn.relu,
@@ -179,7 +187,7 @@ class PolicyGradientNetwork(object):
         connected_1 = tf.contrib.layers.fully_connected(
             trainable=True,
             inputs=resupply,
-            num_outputs=h+w,
+            num_outputs=16 * (h+w),
             activation_fn=tf.nn.relu,
             weights_initializer=initializer,
             weights_regularizer=tf.contrib.layers.l2_regularizer(1.0),
@@ -189,22 +197,32 @@ class PolicyGradientNetwork(object):
         connected_2 = tf.contrib.layers.fully_connected(
             trainable=True,
             inputs=connected_1,
-            num_outputs=17,
+            num_outputs=8 * (h+w),
+            activation_fn=tf.nn.relu,
+            weights_initializer=initializer,
+            weights_regularizer=tf.contrib.layers.l2_regularizer(1.0),
+            biases_initializer=initializer)
+
+        # Third fully connected layer, steps down.
+        connected_3 = tf.contrib.layers.fully_connected(
+            trainable=True,
+            inputs=connected_2,
+            num_outputs=16,
             activation_fn=tf.nn.relu,
             weights_initializer=initializer,
             weights_regularizer=tf.contrib.layers.l2_regularizer(1.0),
             biases_initializer=initializer)
 
         # Logits, softmax, random sample.
-        connected_3 = tf.contrib.layers.fully_connected(
+        connected_4 = tf.contrib.layers.fully_connected(
             trainable=True,
-            inputs=connected_2,
+            inputs=connected_3,
             num_outputs=_ACTION_SIZE,
             activation_fn=tf.nn.sigmoid,
             weights_initializer=initializer,
             weights_regularizer=tf.contrib.layers.l2_regularizer(1.0),
             biases_initializer=initializer)
-        self.action_softmax = tf.nn.softmax(connected_3, name='action_softmax')
+        self.action_softmax = tf.nn.softmax(connected_4, name='action_softmax')
 
         # Sum the components of the softmax
         probability_histogram = tf.cumsum(self.action_softmax, axis=1)
@@ -212,7 +230,7 @@ class PolicyGradientNetwork(object):
         sample = tf.expand_dims(sample, axis=-1)
         filtered = tf.where(probability_histogram >= sample,
                             probability_histogram,
-                            tf.ones_like(probability_histogram))
+                            2.0 * tf.ones_like(probability_histogram))
 
         self.action_out = tf.argmin(filtered, 1)
 
@@ -227,16 +245,17 @@ class PolicyGradientNetwork(object):
             name='loss_policy')
         # TODO: Investigate whether regularization losses are sums or
         # means and consider removing the division.
-        loss_regularization = (0.005 / tf.to_float(tf.shape(self.state)[0]) *
+        loss_regularization = (0.5 / tf.to_float(tf.shape(self.state)[0]) *
             sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
         # Encourage indecision.
-        loss_entropy = -0.01 * tf.reduce_mean(
-            self.action_softmax * (1.0 - self.action_softmax))
-        self.loss = loss_policy + loss_regularization + loss_entropy
+        #loss_entropy = -tf.reduce_mean(
+        #    self.action_softmax * (1.0 - self.action_softmax))
+        # TODO: Consider removing entropy entirely.
+        self.loss = loss_policy + loss_regularization # + loss_entropy
 
         tf.summary.scalar('loss_policy', loss_policy)
         tf.summary.scalar('loss_regularization', loss_regularization)
-        tf.summary.scalar('loss_entropy', loss_entropy)
+        # tf.summary.scalar('loss_entropy', loss_entropy)
 
         # TODO: Use a decaying learning rate
         optimizer = tf.train.AdamOptimizer(learning_rate=0.05)
@@ -284,12 +303,13 @@ class PolicyGradientNetwork(object):
         state[i,:,:] = step_state
         score[i] = step_score
         action_in[i,0] = action
-        r = reward + 0.97 * r
+        r = reward + 0.95 * r
         advantage[i,0] = r
         i += 1
-    # Scale rewards to have zero mean, unit variance
-    # TODO(dominicc): Consider removing the zero mean.
-    advantage = (advantage - np.mean(advantage)) / np.var(advantage)
+    # Scale rewards to have unit variance
+    variance = np.var(advantage)
+    if variance > 1e-10:
+      advantage /= variance
 
     summary, _ = session.run([self.summary, self.update], feed_dict={
         self.state: state,

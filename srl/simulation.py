@@ -60,9 +60,6 @@ class Simulation(object):
     reward = -1
 
     self.steps += 1
-    # TODO: Encode the move limit it one place.
-    if self.steps > 295:
-      reward -= 1000  # Too slow penalty.
 
     delta = movement.MOVEMENT[action]
     new_state = self.x + delta[0], self.y + delta[1]
