@@ -17,8 +17,8 @@
 import unittest
 
 from srl import context_test
+from srl import dqn_test
 from srl import grid_test
-from srl import policy_gradient_test
 from srl import simulation_test
 from srl import world_test
 
@@ -28,7 +28,7 @@ def load_tests(loader, unused_tests, unused_pattern):
   test_modules = [
       context_test,
       grid_test,
-      policy_gradient_test,
+      dqn_test,
       simulation_test,
       world_test,
     ]

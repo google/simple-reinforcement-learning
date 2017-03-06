@@ -26,9 +26,9 @@ import tensorflow as tf
 import time
 
 from srl import context
+from srl import dqn
 from srl import movement
 from srl import player
-from srl import policy_gradient
 from srl import simulation
 from srl import world
 
@@ -213,8 +213,8 @@ def main():
                      help='use the keyboard arrow keys to play')
   group.add_argument('--q', action='store_true',
                      help='play automatically with Q-learning')
-  group.add_argument('--pg', action='store_true',
-                     help='play automatically with policy gradients')
+  group.add_argument('--dqn', action='store_true',
+                     help='play automatically with a deep-Q network')
   parser.add_argument('--random', action='store_true',
                       help='generate a random map')
 
@@ -241,10 +241,10 @@ def main():
     learner = QLearner(q, 0.05, 0.1)
     policy = EpsilonPolicy(GreedyQ(q), RandomPolicy(), 0.01)
     player = MachinePlayer(policy, learner)
-  elif args.pg:
+  elif args.dqn:
     g = tf.Graph()
     s = tf.Session(graph=g)
-    player = policy_gradient.PolicyGradientPlayer(g, s, generator.size)
+    player = dqn.DeepQPlayer(g, s, generator.size)
     with g.as_default():
       init = tf.global_variables_initializer()
       s.run(init)

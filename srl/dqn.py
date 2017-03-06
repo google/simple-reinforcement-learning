@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-'''A policy gradient-based maze runner in TensorFlow.
+'''A deep Q network-based maze runner in TensorFlow.
 
-This is based on
-https://medium.com/@awjuliani/super-simple-reinforcement-learning-tutorial-part-2-ded33892c724
+This is based on these papers: https://arxiv.org/pdf/1312.5602v1.pdf and
+https://arxiv.org/pdf/1509.06461.pdf
 '''
 
 import collections
 import datetime
+import itertools
 import numpy as np
 import random
 import sys
@@ -45,13 +46,13 @@ class ReplayBuffer(object):
   def size(self):
     return len(self._positive) + len(self._negative)
 
-  def add(self, final_score, experience):
+  def add(self, score, experience):
     if self.size >= self._max_size:
       if len(self._positive) > len(self._negative):
         self._positive.pop()
       else:
         self._negative.pop()
-    if final_score > 0:
+    if score > 0:
       self._positive.append(experience)
     else:
       self._negative.append(experience)
@@ -73,50 +74,61 @@ class ReplayBuffer(object):
     return source[random.randint(0, len(source) - 1)]
 
 
-class PolicyGradientNetwork(object):
-  '''A policy gradient network.
+class DeepQNetwork(object):
+  '''A deep Q-network.
 
   This has a number of properties for operating on the network with
   TensorFlow:
 
+  Placeholders:
     state: Feed a world-sized array for selecting an action.
         [-1, h, w] int32
-    score: The score, also used for selecting an action. [-1, 1]
-        int32.
+
+  Operations:
     action_out: Produces an action, fed state.
 
+  For trainable networks (one provided a target):
+
+  Placeholders:
     action_in: Feed the responsible actions for the rewards.
         [-1, 1] int32 0 <= x < len(movement.ALL_ACTIONS)
-    advantage: Feed the "goodness" of each given state.
-        [-1, 1] float32
-    update: Given batches of experience, train the network.
+    reward: The reward of each given action. [-1, 1] float32
+    is_terminal: Whether the next state is a terminal state.
+        [-1, 1] bool.
+    next_state: The state arrived at after action. [-1, h, w] int32.
 
+  Operations:
+    update: Given batches of experience, train the network.
+    update_target: Copy trainable variables to the target network.
     loss: Training loss.
     summary: Merged summaries.
   '''
 
-  def __init__(self, name, graph, world_size_h_w):
-    '''Creates a PolicyGradientNetwork.
+  def __init__(self, name, graph, world_size_h_w, target=None):
+    '''Creates a DeepQNetwork.
 
     Args:
       name: The name of this network. TF variables are in a scope with
           this name.
       graph: The TF graph to build operations in.
       world_size_h_w: The size of the world, height by width.
+      target: The target network to use for training.
     '''
     h, w = world_size_h_w
     self._h, self._w = h, w
+    trainable = target != None
     with graph.as_default():
+      variable_start_index = len(tf.model_variables())
+
       initializer = tf.contrib.layers.xavier_initializer()
-      with tf.variable_scope(name) as self.variables:
-        self.score = tf.placeholder(tf.int32, shape=[None])
-        score = tf.expand_dims(tf.cast(self.score, dtype=tf.float32), axis=-1)
-        self.state = tf.placeholder(tf.int32, shape=[None, h, w])
+      with tf.variable_scope(name) as var_scope:
+        self.state = tf.placeholder(tf.int32, shape=[None, h, w], name='state')
 
         # Input embedding
         embedding = tf.get_variable(
             'embedding', shape=[_FEATURE_SIZE, _EMBEDDING_SIZE],
             initializer=initializer)
+        tf.contrib.framework.add_model_variable(embedding)
         embedding_lookup = tf.nn.embedding_lookup(
             embedding, tf.reshape(self.state, [-1, h * w]),
             name='embedding_lookup')
@@ -126,7 +138,7 @@ class PolicyGradientNetwork(object):
         # First convolution.
         conv_1_out_channels = 27
         conv_1 = tf.contrib.layers.conv2d(
-            trainable=True,
+            trainable=trainable,
             inputs=embedding_lookup,
             num_outputs=conv_1_out_channels,
             kernel_size=[5, 5],
@@ -145,7 +157,7 @@ class PolicyGradientNetwork(object):
         conv_2_out_channels = 50
         conv_2_stride = 2
         conv_2 = tf.contrib.layers.conv2d(
-            trainable=True,
+            trainable=trainable,
             inputs=conv_1,
             num_outputs=conv_2_out_channels,
             kernel_size=[5, 5],
@@ -162,7 +174,7 @@ class PolicyGradientNetwork(object):
         conv_3_out_channels = 100
         conv_3_stride = 2
         conv_3 = tf.contrib.layers.conv2d(
-            trainable=True,
+            trainable=trainable,
             inputs=conv_2,
             num_outputs=conv_3_out_channels,
             kernel_size=[5, 5],
@@ -175,17 +187,16 @@ class PolicyGradientNetwork(object):
         shrunk_h = (shrunk_h + conv_3_stride - 1) // conv_3_stride
         shrunk_w = (shrunk_w + conv_3_stride - 1) // conv_3_stride
 
-        # Resupply the input, and introduce the score, at this point.
+        # Resupply the input.
         resupply = tf.concat([
               tf.reshape(conv_3,
                          [-1, shrunk_h * shrunk_w * conv_3_out_channels]),
-              tf.reshape(embedding_lookup, [-1, h * w * _EMBEDDING_SIZE]),
-              score
+              tf.reshape(embedding_lookup, [-1, h * w * _EMBEDDING_SIZE])
             ], 1, name='resupply')
 
         # First fully connected layer.
         connected_1 = tf.contrib.layers.fully_connected(
-            trainable=True,
+            trainable=trainable,
             inputs=resupply,
             num_outputs=16 * (h+w),
             activation_fn=tf.nn.relu,
@@ -195,7 +206,7 @@ class PolicyGradientNetwork(object):
 
         # Second fully connected layer, steps down.
         connected_2 = tf.contrib.layers.fully_connected(
-            trainable=True,
+            trainable=trainable,
             inputs=connected_1,
             num_outputs=8 * (h+w),
             activation_fn=tf.nn.relu,
@@ -205,7 +216,7 @@ class PolicyGradientNetwork(object):
 
         # Third fully connected layer, steps down.
         connected_3 = tf.contrib.layers.fully_connected(
-            trainable=True,
+            trainable=trainable,
             inputs=connected_2,
             num_outputs=16,
             activation_fn=tf.nn.relu,
@@ -213,118 +224,125 @@ class PolicyGradientNetwork(object):
             weights_regularizer=tf.contrib.layers.l2_regularizer(1.0),
             biases_initializer=initializer)
 
-        # Logits, softmax, random sample.
-        connected_4 = tf.contrib.layers.fully_connected(
-            trainable=True,
+        # Output layer.
+        self.action_value = tf.contrib.layers.fully_connected(
+            trainable=trainable,
             inputs=connected_3,
             num_outputs=_ACTION_SIZE,
-            activation_fn=tf.nn.sigmoid,
+            activation_fn=tf.nn.relu,
             weights_initializer=initializer,
             weights_regularizer=tf.contrib.layers.l2_regularizer(1.0),
             biases_initializer=initializer)
-        self.action_softmax = tf.nn.softmax(connected_4, name='action_softmax')
 
-        # Sum the components of the softmax
-        probability_histogram = tf.cumsum(self.action_softmax, axis=1)
-        sample = tf.random_uniform(tf.shape(probability_histogram)[0:1])
-        sample = tf.expand_dims(sample, axis=-1)
-        filtered = tf.where(probability_histogram >= sample,
-                            probability_histogram,
-                            2.0 * tf.ones_like(probability_histogram))
+        self.action_out = tf.argmax(self.action_value, 1)
 
-        self.action_out = tf.argmin(filtered, 1)
+        self._variables = tf.model_variables()[variable_start_index:]
+        assert len(self._variables) > 0
 
-        self.action_in = tf.placeholder(tf.int32, shape=[None, 1])
-        self.advantage = tf.placeholder(tf.float32, shape=[None, 1])
+        if trainable:
+          # This network is trainable.
+          assert len(self._variables) == len(target._variables)
 
-        action_one_hot = tf.one_hot(self.action_in, _ACTION_SIZE,
-                                    dtype=tf.float32)
-        action_advantage = self.advantage * action_one_hot
-        loss_policy = -100.0 * tf.reduce_mean(
-            tf.reduce_sum(tf.log(self.action_softmax) * action_advantage, 1),
-            name='loss_policy')
-        # TODO: Investigate whether regularization losses are sums or
-        # means and consider removing the division.
-        loss_regularization = (0.5 / tf.to_float(tf.shape(self.state)[0]) *
-            sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
-        # Encourage indecision.
-        #loss_entropy = -tf.reduce_mean(
-        #    self.action_softmax * (1.0 - self.action_softmax))
-        # TODO: Consider removing entropy entirely.
-        self.loss = loss_policy + loss_regularization # + loss_entropy
+          self.next_state = target.state
 
-        tf.summary.scalar('loss_policy', loss_policy)
-        tf.summary.scalar('loss_regularization', loss_regularization)
-        # tf.summary.scalar('loss_entropy', loss_entropy)
+          self.reward = tf.placeholder(tf.float32, shape=[None], name='reward')
+          self.is_terminal = tf.placeholder(tf.bool, shape=[None],
+                                            name='is_terminal')
+          is_not_terminal = tf.cast(tf.logical_not(self.is_terminal),
+                                    tf.float32)
 
-        # TODO: Use a decaying learning rate
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.05)
-        self.update = optimizer.minimize(self.loss)
+          gamma = 0.97
+          target_value = (self.reward + gamma * is_not_terminal *
+                          tf.reduce_max(target.action_value, axis=1))
 
-        self.summary = tf.summary.merge_all()
+          self.action_in = tf.placeholder(tf.int32, shape=[None],
+                                          name='action_in')
+          action_one_hot = tf.one_hot(self.action_in, _ACTION_SIZE,
+                                      dtype=tf.float32)
+          policy_value = tf.reduce_sum(self.action_value * action_one_hot,
+                                       axis=1)
+          loss_policy = target_value - policy_value
+          loss_policy *= loss_policy  # Squared error
+          loss_policy = tf.reduce_mean(loss_policy, name='loss_policy')
+          # TODO: Investigate whether regularization losses are sums or
+          # means and consider removing the division.
+          loss_regularization = (0.5 / tf.to_float(tf.shape(self.state)[0]) *
+              sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
+                                    scope=name)))
+          # Encourage indecision.
+          #loss_entropy = -tf.reduce_mean(
+          #    self.action_softmax * (1.0 - self.action_softmax))
+          # TODO: Consider removing entropy entirely.
+          self.loss = loss_policy + loss_regularization # + loss_entropy
 
-  def predict(self, session, states, scores):
+          tf.summary.scalar('loss_policy', loss_policy)
+          tf.summary.scalar('loss_regularization', loss_regularization)
+          # tf.summary.scalar('loss_entropy', loss_entropy)
+
+          # TODO: Use a decaying learning rate
+          optimizer = tf.train.AdamOptimizer(learning_rate=0.05)
+          self.update = optimizer.minimize(self.loss)
+
+          self.summary = tf.summary.merge_all()
+
+          self.update_target = list(map(lambda t, s: tf.assign(t, s),
+                                        target._variables, self._variables))
+
+  def predict(self, session, states):
     '''Chooses actions for a list of states.
 
     Args:
       session: The TensorFlow session to run the net in.
       states: A list of simulation states which have been serialized
           to arrays.
-      scores: A list of simulation scores for those states.
 
     Returns:
-      An array of actions, 0 .. 4 and an array of array of
-      probabilities.
+      An array of actions, 0 .. 4 and an array of array of values.
     '''
-    return session.run([self.action_out, self.action_softmax],
-                       feed_dict={self.state: states, self.score: scores})
+    return session.run([self.action_out, self.action_value],
+                       feed_dict={self.state: states})
 
-  def train(self, session, episodes):
+  def train(self, session, experiences):
     '''Trains the network.
 
     Args:
-      episodes: A list of episodes. Each episode is a list of
-          3-tuples with the state, the chosen action, and the
-          reward.
+      experiences: A list of tuples with the state, the chosen action,
+          the reward, the next state, and whether the new state is a
+          terminal state.
 
     Returns:
       Training loss summaries suitable for adding to a file for
       TensorBoard.
+
     '''
-    size = sum(map(len, episodes))
+    size = len(experiences)
     state = np.empty([size, self._h, self._w])
-    score = np.empty([size])
-    action_in = np.empty([size, 1])
-    advantage = np.empty([size, 1])
-    i = 0
-    for episode in episodes:
-      r = 0.0
-      for step_state, step_score, action, reward in reversed(episode):
-        state[i,:,:] = step_state
-        score[i] = step_score
-        action_in[i,0] = action
-        r = reward + 0.95 * r
-        advantage[i,0] = r
-        i += 1
-    # Scale rewards to have unit variance
-    variance = np.var(advantage)
-    if variance > 1e-10:
-      advantage /= variance
+    next_state = np.empty([size, self._h, self._w])
+    action_in = np.empty([size])
+    reward = np.empty([size])
+    is_terminal = np.empty([size], dtype=np.bool)
+    for i, (s, a, r, next_s, next_s_is_terminal) in enumerate(experiences):
+      state[i,:,:] = s
+      next_state[i,:,:] = next_s
+      reward[i] = r / 1000.0  # Scale rewards
+      action_in[i] = a
+      is_terminal[i] = next_s_is_terminal
 
     summary, _ = session.run([self.summary, self.update], feed_dict={
         self.state: state,
-        self.score: score,
+        self.next_state: next_state,
+        self.reward: reward,
         self.action_in: action_in,
-        self.advantage: advantage
+        self.is_terminal: is_terminal
       })
     return summary
 
 
-_EXPERIENCE_BUFFER_SIZE = 100
-_BATCH_SIZE = 20
+_EXPERIENCE_BUFFER_SIZE = 5000
+_BATCH_SIZE = 100
 
 
-class PolicyGradientPlayer(player.Player):
+class DeepQPlayer(player.Player):
   def __init__(self, graph, session, world_size_w_h):
     super(PolicyGradientPlayer, self).__init__()
     w, h = world_size_w_h
