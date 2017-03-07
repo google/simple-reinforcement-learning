@@ -20,7 +20,7 @@ https://arxiv.org/pdf/1509.06461.pdf
 
 import collections
 import datetime
-import itertools
+import math
 import numpy as np
 import random
 import sys
@@ -251,7 +251,7 @@ class DeepQNetwork(object):
           is_not_terminal = tf.cast(tf.logical_not(self.is_terminal),
                                     tf.float32)
 
-          gamma = 0.97
+          gamma = 0.99
           target_value = (self.reward + gamma * is_not_terminal *
                           tf.reduce_max(target.action_value, axis=1))
 
@@ -266,21 +266,16 @@ class DeepQNetwork(object):
           loss_policy = tf.reduce_mean(loss_policy, name='loss_policy')
           # TODO: Investigate whether regularization losses are sums or
           # means and consider removing the division.
-          loss_regularization = (0.5 / tf.to_float(tf.shape(self.state)[0]) *
+          loss_regularization = (0.001 / tf.to_float(tf.shape(self.state)[0]) *
               sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
                                     scope=name)))
-          # Encourage indecision.
-          #loss_entropy = -tf.reduce_mean(
-          #    self.action_softmax * (1.0 - self.action_softmax))
-          # TODO: Consider removing entropy entirely.
-          self.loss = loss_policy + loss_regularization # + loss_entropy
+          self.loss = loss_policy + loss_regularization
 
           tf.summary.scalar('loss_policy', loss_policy)
           tf.summary.scalar('loss_regularization', loss_regularization)
-          # tf.summary.scalar('loss_entropy', loss_entropy)
 
           # TODO: Use a decaying learning rate
-          optimizer = tf.train.AdamOptimizer(learning_rate=0.05)
+          optimizer = tf.train.AdamOptimizer(learning_rate=0.3)
           self.update = optimizer.minimize(self.loss)
 
           self.summary = tf.summary.merge_all()
@@ -306,7 +301,8 @@ class DeepQNetwork(object):
     '''Trains the network.
 
     Args:
-      experiences: A list of tuples with the state, the chosen action,
+      experiences: A list of experiences, where experiences are a list
+          with a trace of tuples with the state, the chosen action,
           the reward, the next state, and whether the new state is a
           terminal state.
 
@@ -315,18 +311,21 @@ class DeepQNetwork(object):
       TensorBoard.
 
     '''
-    size = len(experiences)
+    size = sum(map(len, experiences))
     state = np.empty([size, self._h, self._w])
     next_state = np.empty([size, self._h, self._w])
     action_in = np.empty([size])
     reward = np.empty([size])
     is_terminal = np.empty([size], dtype=np.bool)
-    for i, (s, a, r, next_s, next_s_is_terminal) in enumerate(experiences):
-      state[i,:,:] = s
-      next_state[i,:,:] = next_s
-      reward[i] = r / 1000.0  # Scale rewards
-      action_in[i] = a
-      is_terminal[i] = next_s_is_terminal
+    i = 0
+    for experience in experiences:
+      for (s, a, r, next_s, next_s_is_terminal) in experience:
+        state[i,:,:] = s
+        next_state[i,:,:] = next_s
+        reward[i] = 1.0 + (r / 10000.0)  # Scale rewards and make positive.
+        action_in[i] = a
+        is_terminal[i] = next_s_is_terminal
+        i += 1
 
     summary, _ = session.run([self.summary, self.update], feed_dict={
         self.state: state,
@@ -338,8 +337,8 @@ class DeepQNetwork(object):
     return summary
 
 
-_EXPERIENCE_BUFFER_SIZE = 5000
-_BATCH_SIZE = 100
+_EXPERIENCE_BUFFER_SIZE = 500  # Traces
+_BATCH_SIZE = 100              # Individual observations
 
 
 class DeepQPlayer(player.Player):
@@ -349,6 +348,7 @@ class DeepQPlayer(player.Player):
     target = DeepQNetwork('target', graph, (h, w))
     self._net = DeepQNetwork('net', graph, (h, w), target=target)
     self._experiences = ReplayBuffer(_EXPERIENCE_BUFFER_SIZE)
+    self._experience = []
     self._session = session
     self._summary_writer = tf.summary.FileWriter(
         '/tmp/srlpg/%s' % datetime.datetime.now().isoformat())
@@ -357,24 +357,25 @@ class DeepQPlayer(player.Player):
   def interact(self, ctx, sim):
     if sim.in_terminal_state:
       sim.reset()
-    else:
-      state = sim.to_array()
-      if random.random() < 0.1:
-        action = random.randint(0, len(movement.ALL_ACTIONS) - 1)
-      else:
-        [[action], _] = self._net.predict(self._session, [state])
-      reward = sim.act(movement.ALL_ACTIONS[action])
-      self._experiences.add(
-          sim.score,
-          (state, action, reward, sim.to_array(), sim.in_terminal_state))
+      self._experiences.add(sim.score, self._experience)
+      self._experience = []
 
       self._training_epoch += 1
       summary = self._net.train(
           self._session,
           [self._experiences.sample() for _ in range(_BATCH_SIZE)])
-      if self._training_epoch % 100 == 99:
+      if self._training_epoch % 4 == 3:
         self._session.run(self._net.update_target)
       self._summary_writer.add_summary(summary)
+    else:
+      state = sim.to_array()
+      if random.random() < (0.01 + math.pow(0.95, self._training_epoch)):
+        action = random.randint(0, len(movement.ALL_ACTIONS) - 1)
+      else:
+        [[action], _] = self._net.predict(self._session, [state])
+      reward = sim.act(movement.ALL_ACTIONS[action])
+      self._experience.append(
+          (state, action, reward, sim.to_array(), sim.in_terminal_state))
 
   def visualize(self, ctx, sim, window):
     visitable = []

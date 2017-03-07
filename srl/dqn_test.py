@@ -93,8 +93,8 @@ class TestDeepQNetwork(unittest.TestCase):
 
     sim = simulation.Simulation(world.Generator(4, 4))
     state = sim.to_array()
-    net.train(s, [(state, 0, 3, state, False), (state, 1, 2, state, False),
-                  (state, 0, 0, state, True)])
+    net.train(s, [[(state, 0, 3, state, False), (state, 1, 2, state, False)],
+                  [(state, 0, 0, state, True)]])
 
   def testActionOut_untrainedPrediction(self):
     g = tf.Graph()
