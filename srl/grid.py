@@ -208,7 +208,7 @@ class QLearner(object):
 
 def main():
   parser = argparse.ArgumentParser(description='Simple Reinforcement Learning.')
-  group = parser.add_mutually_exclusive_group(required=True)
+  group = parser.add_argument_group('Player').add_mutually_exclusive_group(required=True)
   group.add_argument('--interactive', action='store_true',
                      help='use the keyboard arrow keys to play')
   group.add_argument('--q', action='store_true',
