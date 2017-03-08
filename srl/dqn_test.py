@@ -51,7 +51,7 @@ class TestDeepQNetwork(unittest.TestCase):
       s.run(init)
 
     sim = simulation.Simulation(world.Generator(11, 7))
-    [[act], _] = net.predict(s, [sim.to_array()])
+    [[act], _] = net.predict(s, [sim.to_array()], [sim.trace_to_array()])
     self.assertTrue(0 <= act)
     self.assertTrue(act < len(movement.ALL_ACTIONS))
 
@@ -67,15 +67,18 @@ class TestDeepQNetwork(unittest.TestCase):
 
     # Run each network once.
     sim = simulation.Simulation(world.Generator(11, 7))
-    [_, probabilities_net] = net.predict(s, [sim.to_array()])
-    [_, probabilities_target] = target.predict(s, [sim.to_array()])
+    [_, probabilities_net] = net.predict(
+        s, [sim.to_array()], [sim.trace_to_array()])
+    [_, probabilities_target] = target.predict(
+        s, [sim.to_array()], [sim.trace_to_array()])
     self.assertFalse(
       np.all(np.isclose(probabilities_net, probabilities_target)),
       '"net" and "target" should (probably) be different')
 
     # Copy the network to target; run target.
     s.run(net.update_target)
-    [_, probabilities_target] = target.predict(s, [sim.to_array()])
+    [_, probabilities_target] = target.predict(
+        s, [sim.to_array()], [sim.trace_to_array()])
 
     self.assertTrue(
       np.all(np.isclose(probabilities_net, probabilities_target)),
@@ -92,9 +95,9 @@ class TestDeepQNetwork(unittest.TestCase):
       s.run(init)
 
     sim = simulation.Simulation(world.Generator(4, 4))
-    state = sim.to_array()
-    net.train(s, [[(state, 0, 3, state, False), (state, 1, 2, state, False)],
-                  [(state, 0, 0, state, True)]])
+    st = (sim.to_array(), sim.trace_to_array())
+    net.train(s, [[(st, 0, 3, st, False), (st, 1, 2, st, False)],
+                  [(st, 0, 0, st, True)]])
 
   def testActionOut_untrainedPrediction(self):
     g = tf.Graph()
@@ -106,6 +109,7 @@ class TestDeepQNetwork(unittest.TestCase):
     act = s.run(net.action_out,
                 feed_dict={
                   net.state: [np.zeros((17, 13))],
+                  net.trace: [np.zeros((17, 13))],
                 })
     self.assertTrue(0 <= act)
     self.assertTrue(act < len(movement.ALL_ACTIONS))
@@ -120,11 +124,13 @@ class TestDeepQNetwork(unittest.TestCase):
       s.run(init)
     s.run(net.update, feed_dict={
         net.state: np.zeros((7, 13, 23)),
+        net.trace: np.zeros((7, 13, 23)),
         net.action_in: np.zeros((7,)),
         net.reward: np.zeros((7,)),
         net.is_terminal: np.zeros((7,)),
         net.next_state: np.zeros((7, 13, 23)),
-      })
+        net.next_trace: np.zeros((7, 13, 23)),
+    })
 
   def testUpdate_lossDecreases(self):
     w = world.World.parse('@.....$')
@@ -138,12 +144,16 @@ class TestDeepQNetwork(unittest.TestCase):
       init = tf.global_variables_initializer()
       s.run(init)
 
-    state = simulation.Simulation(world.Static(w)).to_array()
+    sim = simulation.Simulation(world.Static(w))
+    state = sim.to_array()
+    trace = sim.trace_to_array()
     losses = []
     for _ in range(10):
       loss, _ = s.run([net.loss, net.update], feed_dict={
             net.state: [state],
+            net.trace: [trace],
             net.next_state: [state],
+            net.next_trace: [trace],
             net.action_in: [3],
             net.reward: [1],
             net.is_terminal: [False],

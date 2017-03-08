@@ -31,7 +31,7 @@ from srl import player
 from srl import world
 
 
-_EMBEDDING_SIZE = 3
+_EMBEDDING_SIZE = 6
 _FEATURE_SIZE = len(world.VALID_CHARS)
 _ACTION_SIZE = len(movement.ALL_ACTIONS)
 
@@ -83,9 +83,11 @@ class DeepQNetwork(object):
   Placeholders:
     state: Feed a world-sized array for selecting an action.
         [-1, h, w] int32
+    trace: Feed a world-sized array indicating where the player has been.
+        [-1, h, w] float32
 
   Operations:
-    action_out: Produces an action, fed state.
+    action_out: Produces an action, fed state and trace.
 
   For trainable networks (one provided a target):
 
@@ -96,6 +98,7 @@ class DeepQNetwork(object):
     is_terminal: Whether the next state is a terminal state.
         [-1, 1] bool.
     next_state: The state arrived at after action. [-1, h, w] int32.
+    next_trace: The trace after the next action. [-1, h, w] float32.
 
   Operations:
     update: Given batches of experience, train the network.
@@ -123,6 +126,7 @@ class DeepQNetwork(object):
       initializer = tf.contrib.layers.xavier_initializer()
       with tf.variable_scope(name) as var_scope:
         self.state = tf.placeholder(tf.int32, shape=[None, h, w], name='state')
+        self.trace = tf.placeholder(tf.float32, shape=[None, h, w], name='trace')
 
         # Input embedding
         embedding = tf.get_variable(
@@ -135,11 +139,17 @@ class DeepQNetwork(object):
         embedding_lookup = tf.reshape(embedding_lookup,
                                       [-1, h, w, _EMBEDDING_SIZE])
 
+        # Add a channel: The trace.
+        embedding_plus_trace = tf.concat([
+            embedding_lookup,
+            tf.expand_dims(self.trace, -1)
+          ], 3, name='embedding_plus_trace')
+
         # First convolution.
         conv_1_out_channels = 27
         conv_1 = tf.contrib.layers.conv2d(
             trainable=trainable,
-            inputs=embedding_lookup,
+            inputs=embedding_plus_trace,
             num_outputs=conv_1_out_channels,
             kernel_size=[5, 5],
             stride=1,
@@ -191,7 +201,8 @@ class DeepQNetwork(object):
         resupply = tf.concat([
               tf.reshape(conv_3,
                          [-1, shrunk_h * shrunk_w * conv_3_out_channels]),
-              tf.reshape(embedding_lookup, [-1, h * w * _EMBEDDING_SIZE])
+              tf.reshape(embedding_plus_trace,
+                         [-1, h * w * (_EMBEDDING_SIZE + 1)])
             ], 1, name='resupply')
 
         # First fully connected layer.
@@ -244,6 +255,7 @@ class DeepQNetwork(object):
           assert len(self._variables) == len(target._variables)
 
           self.next_state = target.state
+          self.next_trace = target.trace
 
           self.reward = tf.placeholder(tf.float32, shape=[None], name='reward')
           self.is_terminal = tf.placeholder(tf.bool, shape=[None],
@@ -283,19 +295,22 @@ class DeepQNetwork(object):
           self.update_target = list(map(lambda t, s: tf.assign(t, s),
                                         target._variables, self._variables))
 
-  def predict(self, session, states):
+  def predict(self, session, states, traces):
     '''Chooses actions for a list of states.
 
     Args:
       session: The TensorFlow session to run the net in.
       states: A list of simulation states which have been serialized
           to arrays.
+      traces: A list of simulation traces which have been serialized
+          to arrays.
 
     Returns:
       An array of actions, 0 .. 4 and an array of array of values.
     '''
-    return session.run([self.action_out, self.action_value],
-                       feed_dict={self.state: states})
+    return session.run(
+        [self.action_out, self.action_value],
+        feed_dict={self.state: states, self.trace: traces})
 
   def train(self, session, experiences):
     '''Trains the network.
@@ -312,16 +327,20 @@ class DeepQNetwork(object):
 
     '''
     size = sum(map(len, experiences))
-    state = np.empty([size, self._h, self._w])
+    state = np.empty([size, self._h, self._w], dtype=np.int)
+    trace = np.empty([size, self._h, self._w], dtype=np.float)
     next_state = np.empty([size, self._h, self._w])
-    action_in = np.empty([size])
-    reward = np.empty([size])
+    next_trace = np.empty([size, self._h, self._w], dtype=np.float)
+    action_in = np.empty([size], dtype=np.int)
+    reward = np.empty([size], dtype=np.int)
     is_terminal = np.empty([size], dtype=np.bool)
     i = 0
     for experience in experiences:
-      for (s, a, r, next_s, next_s_is_terminal) in experience:
+      for (s, t), a, r, (next_s, next_t), next_s_is_terminal in experience:
         state[i,:,:] = s
+        trace[i,:,:] = t
         next_state[i,:,:] = next_s
+        next_trace[i,:,:] = next_t
         reward[i] = 1.0 + (r / 10000.0)  # Scale rewards and make positive.
         action_in[i] = a
         is_terminal[i] = next_s_is_terminal
@@ -329,7 +348,9 @@ class DeepQNetwork(object):
 
     summary, _ = session.run([self.summary, self.update], feed_dict={
         self.state: state,
+        self.trace: trace,
         self.next_state: next_state,
+        self.next_trace: next_trace,
         self.reward: reward,
         self.action_in: action_in,
         self.is_terminal: is_terminal
@@ -368,14 +389,15 @@ class DeepQPlayer(player.Player):
         self._session.run(self._net.update_target)
       self._summary_writer.add_summary(summary)
     else:
-      state = sim.to_array()
+      st = (sim.to_array(), sim.trace_to_array())
       if random.random() < (0.01 + math.pow(0.95, self._training_epoch)):
         action = random.randint(0, len(movement.ALL_ACTIONS) - 1)
       else:
-        [[action], _] = self._net.predict(self._session, [state])
+        [[action], _] = self._net.predict(self._session, [st[0]], [st[1]])
       reward = sim.act(movement.ALL_ACTIONS[action])
       self._experience.append(
-          (state, action, reward, sim.to_array(), sim.in_terminal_state))
+          (st, action, reward, (sim.to_array(), sim.trace_to_array()),
+           sim.in_terminal_state))
 
   def visualize(self, ctx, sim, window):
     visitable = []
