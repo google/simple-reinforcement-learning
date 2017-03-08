@@ -278,16 +278,16 @@ class DeepQNetwork(object):
           loss_policy = tf.reduce_mean(loss_policy, name='loss_policy')
           # TODO: Investigate whether regularization losses are sums or
           # means and consider removing the division.
-          loss_regularization = (0.001 / tf.to_float(tf.shape(self.state)[0]) *
-              sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                                    scope=name)))
-          self.loss = loss_policy + loss_regularization
+          #loss_regularization = (0.001 / tf.to_float(tf.shape(self.state)[0]) *
+          #    sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
+          #                          scope=name)))
+          self.loss = loss_policy #+ loss_regularization
 
           tf.summary.scalar('loss_policy', loss_policy)
-          tf.summary.scalar('loss_regularization', loss_regularization)
+          #tf.summary.scalar('loss_regularization', loss_regularization)
 
           # TODO: Use a decaying learning rate
-          optimizer = tf.train.AdamOptimizer(learning_rate=0.1)
+          optimizer = tf.train.AdamOptimizer(learning_rate=0.05)
           self.update = optimizer.minimize(self.loss)
 
           self.summary = tf.summary.merge_all()
@@ -359,7 +359,7 @@ class DeepQNetwork(object):
 
 
 _EXPERIENCE_BUFFER_SIZE = 500  # Traces
-_BATCH_SIZE = 100              # Individual observations
+_BATCH_SIZE = 25               # Individual observations
 
 
 class DeepQPlayer(player.Player):
@@ -389,8 +389,8 @@ class DeepQPlayer(player.Player):
         self._session.run(self._net.update_target)
       self._summary_writer.add_summary(summary)
     else:
-      st = (sim.to_array(), sim.trace_to_array())
-      if random.random() < (0.01 + math.pow(0.95, self._training_epoch)):
+      st = (sim.to_array(), sim.trace_to_array(0.8))
+      if random.random() < (0.01 + math.pow(0.9999, self._training_epoch)):
         action = random.randint(0, len(movement.ALL_ACTIONS) - 1)
       else:
         [[action], _] = self._net.predict(self._session, [st[0]], [st[1]])
