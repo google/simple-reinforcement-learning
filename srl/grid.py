@@ -217,7 +217,7 @@ def main():
                      help='play automatically with a deep-Q network')
   parser.add_argument('--random', action='store_true',
                       help='generate a random map')
-
+  dqn.DeepQPlayer.add_arguments(parser)
   args = parser.parse_args()
 
   ctx = context.Context()
@@ -244,10 +244,17 @@ def main():
   elif args.dqn:
     g = tf.Graph()
     s = tf.Session(graph=g)
-    player = dqn.DeepQPlayer(g, s, generator.size)
-    with g.as_default():
-      init = tf.global_variables_initializer()
-      s.run(init)
+    player = dqn.DeepQPlayer(g, s, generator.size, args.dqn_save)
+    if args.dqn_reload and args.dqn_save:
+      # TODO: Reloading should also reload the exponential exploration state.
+      player.saver.restore(s, player.model_filename)
+    else:
+      with g.as_default():
+        init = tf.global_variables_initializer()
+        s.run(init)
+        # TODO: This violates encapsulation; all this setup should
+        # move inside the DQN player
+        s.run(player._net.update_target)
   else:
     sys.exit(1)
 

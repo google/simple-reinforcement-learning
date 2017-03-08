@@ -247,12 +247,12 @@ class DeepQNetwork(object):
 
         self.action_out = tf.argmax(self.action_value, 1)
 
-        self._variables = tf.model_variables()[variable_start_index:]
-        assert len(self._variables) > 0
+        self.variables = tf.model_variables()[variable_start_index:]
+        assert len(self.variables) > 0
 
         if trainable:
           # This network is trainable.
-          assert len(self._variables) == len(target._variables)
+          assert len(self.variables) == len(target.variables)
 
           self.next_state = target.state
           self.next_trace = target.trace
@@ -293,7 +293,7 @@ class DeepQNetwork(object):
           self.summary = tf.summary.merge_all()
 
           self.update_target = list(map(lambda t, s: tf.assign(t, s),
-                                        target._variables, self._variables))
+                                        target.variables, self.variables))
 
   def predict(self, session, states, traces):
     '''Chooses actions for a list of states.
@@ -363,11 +363,20 @@ _BATCH_SIZE = 25               # Individual observations
 
 
 class DeepQPlayer(player.Player):
-  def __init__(self, graph, session, world_size_w_h):
+  @classmethod
+  def add_arguments(cls, parser):
+    parser.add_argument('--dqn-reload', action='store_true',
+                        help='reload the model from FILE')
+    parser.add_argument('--dqn-save', type=str, metavar='FILE',
+                        help='checkpoint the model to the specified file')
+
+  def __init__(self, graph, session, world_size_w_h, model_filename=None):
     super(DeepQPlayer, self).__init__()
+    self.model_filename = model_filename
     w, h = world_size_w_h
     target = DeepQNetwork('target', graph, (h, w))
     self._net = DeepQNetwork('net', graph, (h, w), target=target)
+    self.saver = tf.train.Saver(self._net.variables)
     self._experiences = ReplayBuffer(_EXPERIENCE_BUFFER_SIZE)
     self._experience = []
     self._session = session
@@ -377,8 +386,9 @@ class DeepQPlayer(player.Player):
 
   def interact(self, ctx, sim):
     if sim.in_terminal_state:
-      sim.reset()
       self._experiences.add(sim.score, self._experience)
+
+      sim.reset()
       self._experience = []
 
       self._training_epoch += 1
@@ -388,6 +398,9 @@ class DeepQPlayer(player.Player):
       if self._training_epoch % 4 == 3:
         self._session.run(self._net.update_target)
       self._summary_writer.add_summary(summary)
+
+      if self._training_epoch % 10 == 0 and self.model_filename:
+        self.saver.save(self._session, self.model_filename)
     else:
       st = (sim.to_array(), sim.trace_to_array(0.8))
       if random.random() < (0.01 + math.pow(0.9999, self._training_epoch)):
