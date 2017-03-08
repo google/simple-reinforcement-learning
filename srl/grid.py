@@ -93,6 +93,33 @@ class Game(object):
     window.refresh()
 
 
+class Batch(object):
+  '''A simulation that runs quickly and prints summary statistics.'''
+  def __init__(self, ctx, generator, driver):
+    '''Creates a new game in world where driver will interact with the game.'''
+    self._context = ctx
+    self._sim = simulation.Simulation(generator)
+    self._driver = driver
+    self._sum_score = 0.0
+    self._stats = collections.deque([], 100)
+    self._was_in_terminal_state = False
+
+  # The game loop.
+  def step(self):
+    self._driver.interact(self._context, self._sim)
+    if self._sim.in_terminal_state and not self._was_in_terminal_state:
+      if len(self._stats) == self._stats.maxlen:
+        self._sum_score -= self._stats.popleft()
+      self._sum_score += self._sim.score
+      self._stats.append(self._sim.score)
+      self._context.window.erase()
+      self._context.window.addstr(
+          0, 0,
+          'Average score: %s' % (self._sum_score / len(self._stats)))
+      self._context.window.refresh()
+    self._was_in_terminal_state = self._sim.in_terminal_state
+
+
 class HumanPlayer(player.Player):
   '''A game driver that reads input from the keyboard.'''
   def __init__(self):
@@ -217,6 +244,8 @@ def main():
                      help='play automatically with a deep-Q network')
   parser.add_argument('--random', action='store_true',
                       help='generate a random map')
+  parser.add_argument('--batch', action='store_true',
+                      help='do not display the simulation, just summary stats')
   dqn.DeepQPlayer.add_arguments(parser)
   args = parser.parse_args()
 
@@ -258,12 +287,19 @@ def main():
   else:
     sys.exit(1)
 
+  if args.batch and args.interactive:
+    print('Interactive play does not work in batch mode.')
+    sys.exit(1)
+
   is_automatic = args.q or args.dqn
-  if is_automatic:
+  if is_automatic and not args.batch:
     # Slow the game down to make it fun? to watch.
     ctx.run_loop.post_task(lambda: time.sleep(0.1), repeat=True)
 
-  game = Game(ctx, generator, player)
+  if args.batch:
+    game = Batch(ctx, generator, player)
+  else:
+    game = Game(ctx, generator, player)
   ctx.run_loop.post_task(game.step, repeat=True)
 
   ctx.start()
