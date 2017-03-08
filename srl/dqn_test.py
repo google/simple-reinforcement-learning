@@ -25,19 +25,19 @@ from srl import world
 class TestReplayBuffer(unittest.TestCase):
   def test_fillWithPositive(self):
     rb = dqn.ReplayBuffer(2)
-    self.assertEquals(0, rb.size)
+    self.assertEqual(0, rb.size)
     rb.add(1, 'foo')
-    self.assertEquals(1, rb.size)
+    self.assertEqual(1, rb.size)
     rb.add(2, 'bar')
-    self.assertEquals(2, rb.size)
+    self.assertEqual(2, rb.size)
 
     rb.add(3, 'foo')
-    self.assertEquals(2, rb.size, 'should not grow beyond capacity')
+    self.assertEqual(2, rb.size, 'should not grow beyond capacity')
 
   def test_sample(self):
     rb = dqn.ReplayBuffer(1)
     rb.add(42, 'foo')
-    self.assertEquals('foo', rb.sample())
+    self.assertEqual('foo', rb.sample())
 
 
 class TestDeepQNetwork(unittest.TestCase):

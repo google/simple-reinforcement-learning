@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import numpy as np
 
 from srl import movement
@@ -22,23 +23,32 @@ class Simulation(object):
 
   score is the cumulative score of the player in this run of the
   simulation.
+
+  steps is the number of moves the player has made.
+
+  trace is the (x, y) coordinates of the player, to the present.
   '''
   def __init__(self, generator):
     self._generator = generator
 
     # Initialized by reset()
-    self.state = None
     self.world = None
-    self.steps = None
+    self.state = None
+    self.score = None
+    self.trace = None
 
     self.reset()
+
+  @property
+  def steps(self):
+    return len(self.trace)
 
   def reset(self):
     '''Resets the simulation to the initial state.'''
     self.world = self._generator.generate()
     self.state = self.world.init_state
     self.score = 0
-    self.steps = 0
+    self.trace = [self.state]
 
   @property
   def in_terminal_state(self):
@@ -59,8 +69,6 @@ class Simulation(object):
     '''Performs action and returns the reward from that step.'''
     reward = -1
 
-    self.steps += 1
-
     delta = movement.MOVEMENT[action]
     new_state = self.x + delta[0], self.y + delta[1]
 
@@ -77,6 +85,7 @@ class Simulation(object):
       # Penalty for hitting the walls.
       reward -= 3
 
+    self.trace.append(self.state)
     self.score += reward
     return reward
 
@@ -112,4 +121,22 @@ class Simulation(object):
       for u in range(self.world.w):
         w[v, u] = key.index(self.world.at((u, v)))
     w[self.y, self.x] = key.index('@')
+    return w
+
+  def trace_to_array(self, gamma=1.0):
+    '''Converts the trace of the players actions to a numpy ndarray.
+
+    The i-th previous step is given the value gamma^i, starting from
+    the present state with gamma^0=1.0.
+
+    Each value in the array is the sum of the step values in that
+    cell.
+
+    Returns:
+      An np.float32 array the same shape as to_array.
+    '''
+    w = np.zeros(shape=(self.world.h, self.world.w), dtype=np.float32)
+    n = len(self.trace) - 1
+    for i, (x, y) in enumerate(self.trace):
+      w[y, x] += math.pow(gamma, n - i)
     return w

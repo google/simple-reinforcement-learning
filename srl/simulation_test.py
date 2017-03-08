@@ -41,3 +41,13 @@ class TestSimulation(unittest.TestCase):
     self.assertTrue(
       (np.array([[2, 4, 3, 5, 6, 1]], dtype=np.int8) == sim.to_array())
       .all())
+
+  def test_trace_to_array(self):
+    w = world.World.parse('@...$')
+    sim = simulation.Simulation(world.Static(w))
+    sim.act('r')
+    sim.act('r')
+    sim.act('l')
+    self.assertTrue(
+      np.allclose(np.array([[0.125, 1.25, 0.5, 0, 0]], dtype=np.float32),
+                  sim.trace_to_array(0.5)))

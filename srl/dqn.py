@@ -275,7 +275,7 @@ class DeepQNetwork(object):
           tf.summary.scalar('loss_regularization', loss_regularization)
 
           # TODO: Use a decaying learning rate
-          optimizer = tf.train.AdamOptimizer(learning_rate=0.3)
+          optimizer = tf.train.AdamOptimizer(learning_rate=0.1)
           self.update = optimizer.minimize(self.loss)
 
           self.summary = tf.summary.merge_all()
